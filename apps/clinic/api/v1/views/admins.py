@@ -2,7 +2,6 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg  import openapi
 from rest_framework.views import APIView
-from apps.core.permissions import OWNER, RoleByMethodPermission
 from apps.clinic.api.v1.serializers.admins import (
     AdminListSerializer,
     AdminCreateUpdateSerializer,
@@ -10,8 +9,7 @@ from apps.clinic.api.v1.serializers.admins import (
 from apps.clinic.api.v1.services.admins import AdminService
 
 class AdminCreateListView(APIView):
-    permission_classes = [RoleByMethodPermission]
-    allowed_roles = {"GET": OWNER, "POST": OWNER}
+    permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
         responses={200: AdminListSerializer},
@@ -32,8 +30,7 @@ class AdminCreateListView(APIView):
 
 
 class AdminDetailUpdateDeleteView(APIView):
-    permission_classes = [RoleByMethodPermission]
-    allowed_roles = {"PATCH": OWNER, "DELETE": OWNER}
+    permission_classes = [IsAuthenticated]
     @swagger_auto_schema(
         request_body=AdminCreateUpdateSerializer,
         responses={200: AdminListSerializer},

@@ -30,8 +30,6 @@ urlpatterns = [
     path("api/", include("apps.calendars.api.urls")),
     path("api/", include("apps.clinic.api.urls")),
     path("api/", include("apps.core.api.urls")),
-    path("api/", include("apps.finance.api.urls")),
-    path("api/", include("apps.statistics.api.urls")),
 
     re_path(r"static/(?P<path>.*)$", serve, {"document_root": settings.STATIC_ROOT}),
     re_path(r"media/(?P<path>.*)$", serve, {"document_root": settings.MEDIA_ROOT}),

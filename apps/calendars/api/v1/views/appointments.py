@@ -2,7 +2,6 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg  import openapi
 from rest_framework.views import APIView
-from apps.core.permissions import STAFF, RoleByMethodPermission
 from apps.calendars.api.v1.serializers.appointments import (
     AppointmentListSerializer,
     AppointmentCreateUpdateSerializer
@@ -11,8 +10,7 @@ from apps.calendars.api.v1.services.appointments import AppointmentService
 
 
 class AppointmentCreateListView(APIView):
-    permission_classes = [RoleByMethodPermission]
-    allowed_roles = {"GET": STAFF, "POST": STAFF}
+    permission_classes = [IsAuthenticated]
     @swagger_auto_schema(
         responses={200: AppointmentListSerializer},
         tags=['Appointments'],
@@ -55,8 +53,7 @@ class AppointmentCreateListView(APIView):
 
 
 class AppointmentDetailUpdateDeleteView(APIView):
-    permission_classes = [RoleByMethodPermission]
-    allowed_roles = {"PATCH": STAFF, "DELETE": STAFF}
+    permission_classes = [IsAuthenticated]
     @swagger_auto_schema(
         request_body=AppointmentCreateUpdateSerializer,
         responses={200: AppointmentListSerializer},

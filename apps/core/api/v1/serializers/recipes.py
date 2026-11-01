@@ -1,5 +1,4 @@
 from rest_framework import serializers
-from apps.core.permissions import limit_to_clinic
 from apps.core.models import (
     Recipe,
     Medicine
@@ -49,10 +48,6 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
             'notes',
             'medicines',
         ]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        limit_to_clinic(self)
 
     def create(self, validated_data):
         medicines_data = validated_data.pop('medicines', [])

@@ -28,8 +28,6 @@ INSTALLED_APPS = [
     "apps.calendars",
     "apps.clinic",
     "apps.core",
-    "apps.finance",
-    "apps.statistics",
 
     # packages
     'rest_framework',

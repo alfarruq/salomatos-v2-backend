@@ -2,7 +2,6 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg  import openapi
 from rest_framework.views import APIView
-from apps.core.permissions import CLINICAL, OWNER, STAFF, RoleByMethodPermission
 from apps.clinic.api.v1.serializers.treatment import (
     TreatmentListSerializer,
     TreatmentCreateUpdateSerializer,
@@ -13,8 +12,7 @@ from apps.clinic.api.v1.services.treatment import TreatmentService
 
 
 class TreatmentCreateListView(APIView):
-    permission_classes = [RoleByMethodPermission]
-    allowed_roles = {"GET": STAFF, "POST": CLINICAL}
+    permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
         request_body=TreatmentCreateUpdateSerializer(many=True),
@@ -68,8 +66,7 @@ class TreatmentCreateListView(APIView):
         return TreatmentService(request=request).get_treatments(*args,**kwargs)
 
 class TreatmentDetailUpdateDeleteView(APIView):
-    permission_classes = [RoleByMethodPermission]
-    allowed_roles = {"PATCH": CLINICAL, "DELETE": OWNER}
+    permission_classes = [IsAuthenticated]
     @swagger_auto_schema(
         tags=['Treatment'],
         operation_description='Treatment Delete',
@@ -87,8 +84,7 @@ class TreatmentDetailUpdateDeleteView(APIView):
         return TreatmentService(request=request).update_treatment(*args, **kwargs)
 
 class TreatmentTypeCreateListView(APIView):
-    permission_classes = [RoleByMethodPermission]
-    allowed_roles = {"GET": STAFF, "POST": OWNER}
+    permission_classes = [IsAuthenticated]
     @swagger_auto_schema(
         responses={200: TreatmentTypeListSerializer},
         tags=['TreatmentType'],
@@ -116,8 +112,7 @@ class TreatmentTypeCreateListView(APIView):
 
 
 class TreatmentTypeDetailUpdateDeleteView(APIView):
-    permission_classes = [RoleByMethodPermission]
-    allowed_roles = {"PATCH": OWNER, "DELETE": OWNER}
+    permission_classes = [IsAuthenticated]
     @swagger_auto_schema(
         request_body=TreatmentTypeCreateUpdateSerializer,
         responses={200: TreatmentTypeListSerializer},
