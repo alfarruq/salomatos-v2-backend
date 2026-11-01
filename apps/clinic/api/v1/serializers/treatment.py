@@ -1,9 +1,6 @@
 from rest_framework import serializers
 from apps.clinic.models import Treatment, TreatmentType
-from apps.finance.models import Payment
-from apps.core.permissions import limit_to_clinic
 from django.db import transaction
-from django.utils import timezone
 
 class TreatmentListSerializer(serializers.Serializer):
     id = serializers.IntegerField()
@@ -17,7 +14,6 @@ class TreatmentListSerializer(serializers.Serializer):
     visit_number = serializers.IntegerField()
     tooth_number = serializers.IntegerField()
     start_date = serializers.DateField()
-    completed_date = serializers.DateField()
     notes = serializers.CharField()
     status = serializers.CharField()
 
@@ -28,30 +24,9 @@ class TreatmentBulkCreateListSerializer(serializers.ListSerializer):
     @transaction.atomic
     def create(self, validated_data):
         treatments = [Treatment(**item) for item in validated_data]
-        treatments = Treatment.objects.bulk_create(treatments)
-        # What the patient paid while the treatment was entered is a payment
-        # made today, so the finance reports count it like any other.
-        request = self.context.get('request')
-        Payment.objects.bulk_create(
-            Payment(
-                clinic=treatment.clinic,
-                treatment=treatment,
-                patient=treatment.patient,
-                doctor=treatment.doctor,
-                amount=treatment.total_paid,
-                date=timezone.localdate(),
-                created_by=request.user if request else None,
-            )
-            for treatment in treatments
-            if treatment.total_paid
-        )
-        return treatments
+        return Treatment.objects.bulk_create(treatments)
 
 class TreatmentCreateUpdateSerializer(serializers.ModelSerializer):
-    # After creation `total_paid` moves only with finance payments: the amount
-    # paid up front becomes the first payment, and an edit never overwrites it.
-    total_paid = serializers.IntegerField(min_value=0, default=0)
-
     class Meta:
         model = Treatment
         list_serializer_class = TreatmentBulkCreateListSerializer
@@ -64,54 +39,9 @@ class TreatmentCreateUpdateSerializer(serializers.ModelSerializer):
             'visit_number',
             'tooth_number',
             'start_date',
-            'completed_date',
             'notes',
             'status',
         ]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        limit_to_clinic(self)
-
-    def validate(self, attrs):
-        if self.instance is not None:
-            attrs.pop('total_paid', None)
-        elif attrs.get('total_paid', 0) > attrs.get('total_treatment_cost', 0):
-            raise serializers.ValidationError(
-                {'total_paid': 'The amount paid cannot exceed the cost.'}
-            )
-        status = attrs.get('status', getattr(self.instance, 'status', None))
-        start_date = attrs.get('start_date', getattr(self.instance, 'start_date', None))
-        completed_date = attrs.get('completed_date', getattr(self.instance, 'completed_date', None))
-        was_completed = getattr(self.instance, 'status', None) == Treatment.Status.COMPLETED
-        if status != Treatment.Status.COMPLETED:
-            # Reopened or never finished: there is no completion date to keep.
-            attrs['completed_date'] = None
-            return attrs
-        # A treatment booked ahead and closed early completes on its start date;
-        # a date after both today and the start is a typo.
-        latest = max(timezone.localdate(), start_date) if start_date else timezone.localdate()
-        if completed_date is None and not was_completed:
-            # Finished just now by a client that sent no date.
-            completed_date = attrs['completed_date'] = latest
-        if completed_date is not None:
-            if completed_date > latest:
-                raise serializers.ValidationError(
-                    {'completed_date': 'Completion date cannot be in the future.'}
-                )
-            if start_date and completed_date < start_date:
-                raise serializers.ValidationError(
-                    {'completed_date': 'Completion date cannot be before the start date.'}
-                )
-        return attrs
-
-    def update(self, instance, validated_data):
-        for field, value in validated_data.items():
-            setattr(instance, field, value)
-        # Only the fields sent are written, so a payment recorded meanwhile
-        # keeps the `total_paid` it set.
-        instance.save(update_fields=[*validated_data, 'updated_at'])
-        return instance
 
 class TreatmentTypeListSerializer(serializers.Serializer):
     id = serializers.IntegerField()

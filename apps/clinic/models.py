@@ -89,7 +89,6 @@ class Treatment(CreatedUpdatedAbstractModel):
 
     tooth_number = models.PositiveIntegerField(blank = True, null = True)
     start_date = models.DateField()
-    completed_date = models.DateField(blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
     status = models.CharField(choices=Status.choices,max_length=20,default=Status.IN_PROGRESS)
 

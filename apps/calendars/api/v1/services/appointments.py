@@ -5,7 +5,6 @@ from apps.calendars.api.v1.serializers.appointments import (
 )
 from apps.calendars.api.v1.repositories.appointments import AppointmentRepository
 from apps.core.services import BaseService
-from apps.core.permissions import get_clinic, own_doctor
 from apps.calendars.api.v1.filters.appointments import AppointmentFilter
 from rest_framework import status
 
@@ -13,12 +12,9 @@ class AppointmentService(BaseService):
     def __init__(self,request):
         super().__init__(request)
         self.db = AppointmentRepository()
-        self.clinic = get_clinic(request.user)
-        # A doctor works only with their own records; others see the whole clinic.
-        self.doctor = own_doctor(request.user)
 
     def get_appointments(self,*args,**kwargs):
-        unfiltered_appointments = self.db.get_appointments(clinic_id=self.clinic, doctor=self.doctor)
+        unfiltered_appointments = self.db.get_appointments(clinic_id=self.request.user)
         filtered_appointments = AppointmentFilter(
             data=self.request.query_params,
             queryset=unfiltered_appointments,
@@ -37,9 +33,7 @@ class AppointmentService(BaseService):
         )
         serializer_class.is_valid(raise_exception=True)
         appointment = serializer_class.save(
-            clinic = self.clinic,
-            # A doctor books only for themselves.
-            **({'doctor': self.doctor} if self.doctor else {}),
+            clinic = self.request.user,
 
         )
         return self.get_response_object(
@@ -49,7 +43,7 @@ class AppointmentService(BaseService):
         )
 
     def update_appointment(self,*args,**kwargs):
-        appointment = self.db.get_appointment(appointment_id=kwargs.get('pk'),clinic_id=self.clinic, doctor=self.doctor)
+        appointment = self.db.get_appointment(appointment_id=kwargs.get('pk'),clinic_id=self.request.user)
         serializer_class = AppointmentCreateUpdateSerializer(
             instance=appointment,
             data=self.request.data,
@@ -65,7 +59,7 @@ class AppointmentService(BaseService):
         )
 
     def delete_appointment(self,*args,**kwargs):
-        appointment = self.db.get_appointment(appointment_id=kwargs.get('pk'),clinic_id=self.clinic, doctor=self.doctor)
+        appointment = self.db.get_appointment(appointment_id=kwargs.get('pk'),clinic_id=self.request.user)
         appointment.delete()
         return self.get_response_object(
             context={'request': self.request},

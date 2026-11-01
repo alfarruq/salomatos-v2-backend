@@ -4,24 +4,19 @@ from apps.clinic.api.v1.serializers.galleries import (
     GalleryListSerializer
 )
 from apps.core.services import BaseService
-from rest_framework import status
-from apps.core.permissions import get_clinic, own_doctor
 
 
 class GalleryService(BaseService):
     def __init__(self,request):
         super().__init__(request)
         self.db = GalleryRepository()
-        self.clinic = get_clinic(request.user)
-        # A doctor works only with their own records; others see the whole clinic.
-        self.doctor = own_doctor(request.user)
 
     def create_gallery(self,*args,**kwargs):
         serializer_class = GalleryCreateUpdateSerializer(
             data=self.request.data,context={'request': self.request},
         )
         serializer_class.is_valid(raise_exception=True)
-        gallery = serializer_class.save(clinic = self.clinic)
+        gallery = serializer_class.save(clinic = self.request.user)
         return self.get_response_object(
             gallery,
             GalleryListSerializer,
@@ -29,7 +24,7 @@ class GalleryService(BaseService):
         )
 
     def get_galleries(self, *args, **kwargs):
-        gallery = self.db.get_galleries(clinic_id=self.clinic, doctor=self.doctor)
+        gallery = self.db.get_galleries(clinic_id=self.request.user)
         return self.get_response(
             gallery,
             GalleryListSerializer,
@@ -38,7 +33,7 @@ class GalleryService(BaseService):
         )
 
     def update_gallery(self, *args, **kwargs):
-        gallery = self.db.get_gallery(gallery_id=kwargs.get('pk'), clinic_id=self.clinic, doctor=self.doctor)
+        gallery = self.db.get_gallery(gallery_id=kwargs.get('pk'), clinic_id=self.request.user)
         serializer_class = GalleryCreateUpdateSerializer(
             instance=gallery,
             data=self.request.data,
@@ -54,7 +49,7 @@ class GalleryService(BaseService):
         )
 
     def delete_gallery(self, *args, **kwargs):
-        gallery = self.db.get_gallery(gallery_id=kwargs.get('pk'), clinic_id=self.clinic, doctor=self.doctor)
+        gallery = self.db.get_gallery(gallery_id=kwargs.get('pk'), clinic_id=self.request.user)
         gallery.delete()
         return self.get_response_object(
             context={'request': self.request},

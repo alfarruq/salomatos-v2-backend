@@ -43,7 +43,7 @@ class AdminService(BaseService):
         )
 
     def update_admin(self,*args,**kwargs):
-        admin = self.db.get_admin(user_id=kwargs.get('pk'),clinic_id=self.request.user)
+        admin = self.db.get_doctor(user_id=kwargs.get('pk'),clinic_id=self.request.user)
         serializer_class = AdminCreateUpdateSerializer(
             instance=admin,
             data=self.request.data,

@@ -3,17 +3,12 @@ from apps.clinic.models import Treatment,TreatmentType
 from apps.authentication.models import User
 
 class TreatmentRepository:
-    def get_treatments(self,clinic_id,doctor=None):
+    def get_treatments(self,clinic_id):
         treatments = Treatment.objects.filter(patient__role=User.Roles.PATIENT,clinic=clinic_id)
-        if doctor is not None:
-            treatments = treatments.filter(doctor=doctor)
         return treatments
 
-    def get_treatment(self,treatment_id,clinic_id,doctor=None):
-        treatment = Treatment.objects.filter(id=treatment_id,clinic=clinic_id)
-        if doctor is not None:
-            treatment = treatment.filter(doctor=doctor)
-        treatment = treatment.first()
+    def get_treatment(self,treatment_id,clinic_id):
+        treatment = Treatment.objects.filter(id=treatment_id,clinic=clinic_id).first()
         if not treatment:
             raise ObjectNotFoundException(
                 message="Treatment not found",

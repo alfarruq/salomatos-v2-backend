@@ -5,7 +5,6 @@ from datetime import datetime
 from apps.clinic.api.v1.serializers.treatment import TreatmentTypeListSerializer
 from apps.core.api.v1.serializers.recipes import RecipeListSerializer
 from django.db.models import Sum
-from apps.core.permissions import limit_to_clinic
 
 class PatientListSerializer(serializers.Serializer):
     id = serializers.IntegerField()
@@ -77,10 +76,6 @@ class PatientCreateUpdateSerializer(serializers.ModelSerializer):
 
 
         ]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        limit_to_clinic(self)
 
 class PatientDetailSerializer(serializers.Serializer):
     id = serializers.IntegerField()

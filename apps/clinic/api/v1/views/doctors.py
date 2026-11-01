@@ -2,7 +2,6 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg  import openapi
 from rest_framework.views import APIView
-from apps.core.permissions import OWNER, STAFF, RoleByMethodPermission
 from apps.clinic.api.v1.serializers.doctors import (
     DoctorListSerializer,
     DoctorCreateUpdateSerializer,
@@ -12,8 +11,7 @@ from apps.clinic.api.v1.serializers.doctors import (
 from apps.clinic.api.v1.services.doctors import DoctorService
 
 class DoctorCreateListView(APIView):
-    permission_classes = [RoleByMethodPermission]
-    allowed_roles = {"GET": STAFF, "POST": OWNER}
+    permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
         responses={200: DoctorListSerializer},
@@ -34,8 +32,7 @@ class DoctorCreateListView(APIView):
 
 
 class DoctorDetailUpdateDeleteView(APIView):
-    permission_classes = [RoleByMethodPermission]
-    allowed_roles = {"PATCH": OWNER, "DELETE": OWNER}
+    permission_classes = [IsAuthenticated]
     @swagger_auto_schema(
         request_body=DoctorCreateUpdateSerializer,
         responses={200: DoctorListSerializer},
@@ -58,8 +55,7 @@ class DoctorDetailUpdateDeleteView(APIView):
 
 
 class DoctorTypeCreateListView(APIView):
-    permission_classes = [RoleByMethodPermission]
-    allowed_roles = {"GET": STAFF, "POST": OWNER}
+    permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
         responses={200: DoctorTypeListSerializer},
@@ -80,8 +76,7 @@ class DoctorTypeCreateListView(APIView):
 
 
 class DoctorTypeDetailUpdateDeleteView(APIView):
-    permission_classes = [RoleByMethodPermission]
-    allowed_roles = {"PATCH": OWNER, "DELETE": OWNER}
+    permission_classes = [IsAuthenticated]
     @swagger_auto_schema(
         request_body=DoctorTypeCreateUpdateSerializer,
         responses={200: DoctorTypeListSerializer},
