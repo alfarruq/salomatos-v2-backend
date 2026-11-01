@@ -13,14 +13,20 @@ PermissionDeniedException
 )
 
 
-
 class PatientService(BaseService):
     def __init__(self,request):
         super().__init__(request)
+        user = self.request.user
+        if user.role not in [User.Roles.SUPERADMIN,
+                         User.Roles.ADMIN,
+                         User.Roles.DOCTOR,
+        ]:
+            raise PermissionDeniedException()
         self.db = PatientRepository()
 
+
     def get_patients(self,*args,**kwargs):
-        unfiltered_patients = self.db.get_patients(clinic_id=self.request.user)
+        unfiltered_patients = self.db.get_patients(user=self.request.user)
         filtered_patients = PatientFilter(
             data=self.request.query_params,
             queryset=unfiltered_patients,
@@ -51,7 +57,7 @@ class PatientService(BaseService):
         )
 
     def get_patient(self,*args,**kwargs):
-        patient = self.db.get_patient(user_id=kwargs.get('pk'),clinic_id=self.request.user)
+        patient = self.db.get_patient(user_id=kwargs.get('pk'),user=self.request.user)
         return self.get_response(
             patient,
             PatientDetailSerializer,
@@ -59,7 +65,7 @@ class PatientService(BaseService):
         )
 
     def update_patient(self, *args, **kwargs):
-        patient = self.db.get_patient(user_id=kwargs.get('pk'),clinic_id=self.request.user)
+        patient = self.db.get_patient(user_id=kwargs.get('pk'),user=self.request.user)
         serializer_class = PatientCreateUpdateSerializer(
             instance=patient,
             data=self.request.data,
@@ -72,6 +78,14 @@ class PatientService(BaseService):
             obj=patient,
             response_serializer_class=PatientListSerializer,
             context={'request': self.request}
+        )
+
+    def delete_patient(self, *args, **kwargs):
+        patient = self.db.get_patient(user_id=kwargs.get('pk'),user=self.request.user)
+        patient.delete()
+        return self.get_response_object(
+            context={'request': self.request},
+            status_code=status.HTTP_204_NO_CONTENT,
         )
 
 

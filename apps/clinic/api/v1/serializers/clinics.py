@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.clinic.models import Clinic
+from apps.clinic.models import Clinic,SMS
 
 class ClinicListSerializer(serializers.Serializer):
     admin = serializers.CharField()
@@ -22,3 +22,7 @@ class ClinicCreateUpdateSerializer(serializers.ModelSerializer):
             'logo',
             'working_hours'
         ]
+
+
+class SMSListSerializer(serializers.Serializer):
+    balance = serializers.IntegerField()

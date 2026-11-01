@@ -82,6 +82,11 @@ urlpatterns = [
         views.AdminDetailUpdateDeleteView.as_view(),
         name='admin-detail-update-delete',
     ),
+    path(
+        'sms/',
+        views.SMSCreateListView.as_view(),
+        name='sms_create-list',
+    )
 
 
 ]

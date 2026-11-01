@@ -5,8 +5,9 @@ from rest_framework.views import APIView
 from apps.clinic.api.v1.serializers.clinics import (
     ClinicListSerializer,
     ClinicCreateUpdateSerializer,
+    SMSListSerializer
 )
-from apps.clinic.api.v1.services.clinics import ClinicService
+from apps.clinic.api.v1.services.clinics import ClinicService,SMSService
 
 class ClinicCreateListView(APIView):
     permission_classes = [IsAuthenticated]
@@ -48,3 +49,13 @@ class ClinicDetailUpdateDeleteView(APIView):
         return ClinicService(request=request).delete_clinic(*args,**kwargs)
 
 
+class SMSCreateListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        responses={200: SMSListSerializer},
+        tags=['SMS'],
+        operation_description='SMS List',
+    )
+    def get(self,request,*args,**kwargs):
+        return SMSService(request=request).get_smses(*args,**kwargs)

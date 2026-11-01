@@ -1,7 +1,8 @@
-from apps.clinic.api.v1.repositories.clinics import ClinicRepository
+from apps.clinic.api.v1.repositories.clinics import ClinicRepository,SMSRepository
 from apps.clinic.api.v1.serializers.clinics import (
     ClinicCreateUpdateSerializer,
     ClinicListSerializer,
+    SMSListSerializer
 )
 from apps.core.services import BaseService
 from rest_framework import status
@@ -62,5 +63,16 @@ class ClinicService(BaseService):
         )
 
 
+class SMSService(BaseService):
+    def __init__(self,request):
+        super().__init__(request)
+        self.db = SMSRepository()
 
-
+    def get_smses(self,*args,**kwargs):
+        smses = self.db.get_smses(clinic_id=self.request.user)
+        return self.get_response(
+            smses,
+            SMSListSerializer,
+            context={'request': self.request},
+            many=True
+        )

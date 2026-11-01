@@ -3,6 +3,7 @@ from apps.clinic.models import (
     Treatment,
     TreatmentType,
     Clinic,
+    SMS
 )
 
 
@@ -24,5 +25,11 @@ class ClinicAdmin(admin.ModelAdmin):
     list_display = ['id','name','admin','phone_number','address']
     list_display_links = ['name','address']
     search_fields = ['name','address']
+
+@admin.register(SMS)
+class SMSAdmin(admin.ModelAdmin):
+    list_display = ['id','clinic','balance',]
+    list_display_links = ['clinic','balance',]
+    search_fields = ['clinic','balance']
 
 

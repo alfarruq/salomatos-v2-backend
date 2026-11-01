@@ -38,8 +38,7 @@ class Appointment(CreatedUpdatedAbstractModel):
     is_reminded = models.BooleanField(default=False)
     treatment_type = models.CharField(max_length=255,blank=True,null=True)
     tooth_number = models.PositiveIntegerField(blank = True, null = True)
-    guest_name = models.CharField(max_length=255,blank=True,null=True)
-    guest_phone = models.CharField(max_length=14,blank=True,null=True)
+
 
 
 

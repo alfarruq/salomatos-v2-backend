@@ -9,10 +9,20 @@ from apps.core.services import BaseService
 from apps.authentication.models import User
 from rest_framework import status
 from apps.clinic.api.v1.filters.treatment import TreatmentFilter,TreatmentTypeFilter
+from apps.core.exceptions import (
+ObjectNotFoundException,
+PermissionDeniedException
+)
 
 class TreatmentService(BaseService):
     def __init__(self,request):
         super().__init__(request)
+        user = self.request.user
+        if user.role not in [User.Roles.SUPERADMIN,
+                             User.Roles.ADMIN,
+                             User.Roles.DOCTOR,
+                             ]:
+            raise PermissionDeniedException()
         self.db = TreatmentRepository()
 
     def create_treatment(self,*args,**kwargs):

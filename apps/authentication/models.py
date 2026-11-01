@@ -62,6 +62,7 @@ class User(CreatedUpdatedAbstractModel,AbstractBaseUser,PermissionsMixin):
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    is_origin = models.BooleanField(default=False)
 
     telegram_auth_code = models.CharField(max_length=10, unique=True, blank=True, null=True)
     telegram_chat_id = models.CharField(max_length=100, unique=True, blank=True, null=True)

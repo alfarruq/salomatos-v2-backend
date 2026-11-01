@@ -7,10 +7,21 @@ from apps.calendars.api.v1.repositories.appointments import AppointmentRepositor
 from apps.core.services import BaseService
 from apps.calendars.api.v1.filters.appointments import AppointmentFilter
 from rest_framework import status
+from apps.authentication.models import User
+from apps.core.exceptions import (
+ObjectNotFoundException,
+PermissionDeniedException
+)
 
 class AppointmentService(BaseService):
     def __init__(self,request):
         super().__init__(request)
+        user = self.request.user
+        if user.role not in [User.Roles.SUPERADMIN,
+                             User.Roles.ADMIN,
+                             User.Roles.DOCTOR,
+                             ]:
+            raise PermissionDeniedException()
         self.db = AppointmentRepository()
 
     def get_appointments(self,*args,**kwargs):

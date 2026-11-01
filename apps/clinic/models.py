@@ -92,3 +92,14 @@ class Treatment(CreatedUpdatedAbstractModel):
     notes = models.TextField(blank=True, null=True)
     status = models.CharField(choices=Status.choices,max_length=20,default=Status.IN_PROGRESS)
 
+class SMS(CreatedUpdatedAbstractModel):
+    clinic = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='clinic_sms',
+        limit_choices_to={'role': User.Roles.SUPERADMIN},
+        null = True,
+        blank = True,
+    )
+    balance = models.PositiveIntegerField()
+
