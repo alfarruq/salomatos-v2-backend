@@ -5,7 +5,7 @@ from apps.authentication.models import User, Gallery,DoctorType
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
-    list_display = ['id', 'username', 'full_name', 'role', 'doctor', 'is_active']
+    list_display = ['id', 'username', 'full_name', 'role', 'doctor', 'is_active','is_origin']
     list_display_links = ('id', 'username', 'full_name')
     search_fields = ('username', 'full_name', 'role', 'doctor__full_name')
     list_editable = ('is_origin',)
