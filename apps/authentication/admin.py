@@ -8,7 +8,7 @@ class UserAdmin(admin.ModelAdmin):
     list_display = ['id', 'username', 'full_name', 'role', 'doctor', 'is_active']
     list_display_links = ('id', 'username', 'full_name')
     search_fields = ('username', 'full_name', 'role', 'doctor__full_name')
-    editable_fields = ('is_origin',)
+    list_editable = ('is_origin',)
 
 
 @admin.register(Gallery)
