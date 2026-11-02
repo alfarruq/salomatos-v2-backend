@@ -48,6 +48,7 @@ class PatientService(BaseService):
         patient = serializer_class.save(
             role=User.Roles.PATIENT,
             clinic=self.request.user,
+            is_origin=True,
 
         )
         return self.get_response_object(
