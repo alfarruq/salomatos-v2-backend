@@ -79,4 +79,11 @@ class PatientDetailUpdateDeleteView(APIView):
     def patch(self,request,*args,**kwargs):
         return PatientService(request=request).update_patient(*args,**kwargs)
 
+    @swagger_auto_schema(
+        tags=['Patient'],
+        operation_description='Patient Delete ',
+    )
+    def delete(self,request,*args,**kwargs):
+        return PatientService(request=request).delete_patient(*args,**kwargs)
+
 
