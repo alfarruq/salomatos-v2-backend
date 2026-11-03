@@ -11,6 +11,7 @@ from apps.core.exceptions import (
 ObjectNotFoundException,
 PermissionDeniedException
 )
+from rest_framework import status
 
 
 class PatientService(BaseService):
