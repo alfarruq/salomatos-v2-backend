@@ -145,6 +145,8 @@ class TreatmentPlanSerializer(serializers.ModelSerializer):
 class ProcedureSerializer(serializers.ModelSerializer):
     clinic_name = serializers.CharField(source="clinic.name", read_only=True)
     patient = ClinicRelatedField(queryset=Patient.objects.all(), extra_filter={"archived_at__isnull": True})
+    # The clinic-wide procedure journal lists rows of many patients; without the name it is unreadable.
+    patient_name = serializers.CharField(source="patient.full_name", read_only=True)
     doctor = doctor_field(required=False)
     doctor_name = serializers.CharField(source="doctor.user.full_name", read_only=True)
     service = ClinicRelatedField(queryset=Service.objects.all())
@@ -165,6 +167,7 @@ class ProcedureSerializer(serializers.ModelSerializer):
             "clinic",
             "clinic_name",
             "patient",
+            "patient_name",
             "doctor",
             "doctor_name",
             "service",

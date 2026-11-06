@@ -219,7 +219,7 @@ class ProcedureViewSet(
     mixins.UpdateModelMixin,
     viewsets.GenericViewSet,
 ):
-    queryset = Procedure.objects.select_related("clinic", "doctor__user", "service")
+    queryset = Procedure.objects.select_related("clinic", "patient", "doctor__user", "service")
     filterset_class = ProcedureFilter
     http_method_names = ["get", "post", "patch", "head", "options"]
     organization_actions = frozenset({"list", "retrieve"})

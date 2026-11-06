@@ -5,8 +5,6 @@ import pytest
 from apps.catalog.models import Service
 from apps.dental.models import PlanItem, ToothEvent, TreatmentPlan
 
-from .conftest import ids
-
 
 @pytest.fixture
 def services(world):
@@ -162,5 +160,7 @@ def test_owner_sees_procedures_of_all_branches(world, services):
         format="json",
     )
     owner = world.client(world.owner, organization=world.org)
-    assert len(ids(owner.get("/api/v1/procedures/"))) == 1
+    rows = owner.get("/api/v1/procedures/").json()["results"]
+    assert len(rows) == 1
+    assert rows[0]["patient_name"] == world.patient_a.full_name
     assert world.client(world.admin_b).get("/api/v1/procedures/").json()["results"] == []
