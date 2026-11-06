@@ -33,4 +33,9 @@ Organization owners may send `X-Organization-Id` instead for read-only "all bran
 | `/api/v1/chairs/`, `/appointments/` | Schedule |
 | `/api/v1/prescriptions/` (+ `pdf/`) | Prescriptions |
 | `/api/v1/attachments/` (+ `download/`) | X-rays and photos |
+| `/api/v1/tooth-records/` (+ `history/`) | Dental chart (FDI teeth, surfaces) |
+| `/api/v1/treatment-plans/` (+ `present/`, `accept/`, `cancel/`) | Treatment plans with priced items |
+| `/api/v1/procedures/` (+ `void/`) | Performed procedures (the charges) |
+| `/api/v1/payments/` (+ `void/`) | Payments entered by staff |
+| `/api/v1/balances/` (`?has_debt=true`) | Charged, paid and debt per patient |
 | `/api/v1/audit-logs/` | Audit trail (owners) |

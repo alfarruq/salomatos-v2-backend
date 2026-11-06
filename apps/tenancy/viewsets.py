@@ -1,5 +1,5 @@
 from rest_framework import viewsets
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -59,6 +59,17 @@ class ClinicScopedMixin:
 
     def has_perm(self, permission: str) -> bool:
         return permission in permissions_for(self.request.membership)
+
+    def assign_doctor(self, serializer, *, override_perm: str = "patient:view_all") -> None:
+        """Defaults `doctor` to the caller and stops doctors acting in a colleague's name."""
+        me = self.request.membership
+        doctor = serializer.validated_data.get("doctor")
+        if doctor is None:
+            if me.role != Membership.Role.DOCTOR:
+                raise ValidationError({"doctor": "Choose the doctor."}, code="required")
+            serializer.validated_data["doctor"] = me
+        elif not self.has_perm(override_perm) and doctor != me:
+            raise PermissionDenied("You can only act as yourself.")
 
     def get_queryset(self):
         return self.scope_queryset(super().get_queryset().filter(clinic_id__in=self.request.clinic_ids))

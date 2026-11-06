@@ -22,6 +22,13 @@ _DOCTOR = {
     "prescription:manage",
     "attachment:view",
     "attachment:manage",
+    "chart:view",
+    "chart:manage",
+    "plan:view",
+    "plan:manage",
+    "procedure:view",
+    "procedure:manage",
+    "payment:view",
 }
 
 _ADMIN = _DOCTOR | {
@@ -32,12 +39,16 @@ _ADMIN = _DOCTOR | {
     "service:manage",
     "chair:manage",
     "specialty:manage",
+    "procedure:void",
+    "payment:manage",
+    "report:view",
 }
 
 _OWNER = _ADMIN | {
     "clinic:manage",
     "staff:manage_owners",
     "audit:view",
+    "payment:void",
 }
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {

@@ -45,7 +45,13 @@ apps/catalog     ServiceCategory, Service (price list)
 apps/scheduling  Chair, Appointment (doctor/chair conflict check)
 apps/clinical    Prescription, PrescriptionItem, PDF
 apps/imaging     Attachment (X-ray, photo) with private download
+apps/dental      ToothRecord + ToothEvent (chart, FDI), TreatmentPlan + PlanItem, Procedure
+apps/billing     Payment (manual entry: cash/card/transfer), patient balance and debtors
 ```
+
+- **Money is append-only.** Procedures and payments are never edited or deleted;
+  a mistake is voided with a reason (`void` action). Prices are copied onto the
+  line when it is created, so price list changes never rewrite history.
 
 Patients do not log in. They will reach their data only through the Telegram bot
 (planned), which must authenticate with a one-time link code, never by phone number.
