@@ -1,5 +1,3 @@
-import sys
-
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import Http404, JsonResponse
 from django.utils.translation import gettext_lazy as _
@@ -35,16 +33,12 @@ class APIExceptionFormatter:
         self.default_code = exception.default_code
         self.message = getattr(exception, "message", None) or exception.default_detail
         self.message_key = getattr(exception, "message_key", None) or self.default_code
-        self.errors = getattr(exception, "errors", None) or (
-            self.detail if isinstance(self.detail, dict) else {}
-        )
+        self.errors = getattr(exception, "errors", None) or (self.detail if isinstance(self.detail, dict) else {})
         if isinstance(self.detail, dict):
             for key, value in self.detail.items():
                 if isinstance(value, list | tuple):
                     value = value[0]
-                    self.detail[key] = (
-                        value.code if isinstance(value, ErrorDetail) else str(value)
-                    )
+                    self.detail[key] = value.code if isinstance(value, ErrorDetail) else str(value)
                 elif isinstance(value, dict):
                     self.detail[key] = value
                 else:
@@ -65,12 +59,13 @@ class APIExceptionFormatter:
 
 
 def server_error(request, *args, **kwargs):
-    exc_type, exc_value, _ = sys.exc_info()
+    # The exception text can carry PHI (a model's __str__, a query value), so
+    # the client only ever gets a generic message; details stay in server logs.
     data = {
-        "message": str(exc_value),
+        "message": "Internal server error",
         "message_key": "internal_server_error",
         "errors": {},
-        "exception_class": exc_type.__name__,
+        "exception_class": "ServerError",
     }
     return JsonResponse(data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -78,7 +73,15 @@ def server_error(request, *args, **kwargs):
 def drf_exception_handler(exception, context):
     response = exception_handler(exception, context)
     if isinstance(exception, Http404 | ObjectDoesNotExist):
-        return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {
+                "message": "Not found",
+                "message_key": "not_found",
+                "errors": {},
+                "exception_class": "NotFound",
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
     if response is not None:
         formatted_exception = APIExceptionFormatter(exception)
         response.data = formatted_exception.get_response()

@@ -18,4 +18,4 @@ media/
 *.swp
 celerybeat-schedule
 celerybeat-schedule.*
-celerybeat.pid
+celerybeat.pidprivate_media/

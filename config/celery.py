@@ -1,18 +1,12 @@
 import os
+
 from celery import Celery
-from celery.schedules import crontab
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 
-app = Celery('config')
-
-app.config_from_object('django.conf:settings', namespace='CELERY')
+app = Celery("config")
+app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
-
-app.conf.beat_schedule = {
-    'send-appointment-reminders-every-5-minutes': {
-        'task': 'apps.core.tasks.send_appointment_reminders',
-        'schedule': crontab(minute='*/5'),
-    },
-}
+# Appointment reminders return with the secure Telegram bot (plan phase 4).
+app.conf.beat_schedule = {}
