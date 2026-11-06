@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: salomatos_v2
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      SECRET_KEY: ci-only-secret-key-not-used-anywhere-else-0123456789
+      DEBUG: "0"
+      DB_PASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0
+      - run: pip install -r requirements-dev.txt
+      - run: ruff format --check .
+      - run: ruff check .
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py check --deploy --fail-level WARNING
+      - run: python manage.py spectacular --validate --fail-on-warn --file /tmp/schema.yml
+      - run: pytest
+        env:
+          # The test client speaks plain HTTP; HTTPS redirects are covered by check --deploy.
+          SECURE_SSL_REDIRECT: "0"
