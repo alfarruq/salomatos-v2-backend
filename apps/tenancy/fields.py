@@ -6,11 +6,13 @@ class ClinicRelatedField(serializers.PrimaryKeyRelatedField):
 
     Without it an id from another tenant would be accepted and its row linked
     (and later shown) here. Pass `extra_filter` to narrow further, e.g. to
-    doctors only.
+    doctors only, and `clinic_lookup` for a model that reaches the clinic
+    through a parent (e.g. `plan__clinic`).
     """
 
     def __init__(self, **kwargs):
         self.extra_filter = kwargs.pop("extra_filter", None)
+        self.clinic_lookup = kwargs.pop("clinic_lookup", "clinic")
         super().__init__(**kwargs)
 
     def get_queryset(self):
@@ -19,7 +21,7 @@ class ClinicRelatedField(serializers.PrimaryKeyRelatedField):
         queryset = super().get_queryset()
         if clinic is None:
             return queryset.none()
-        queryset = queryset.filter(clinic=clinic)
+        queryset = queryset.filter(**{self.clinic_lookup: clinic})
         if self.extra_filter:
             queryset = queryset.filter(**self.extra_filter)
         return queryset

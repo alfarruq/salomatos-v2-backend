@@ -6,8 +6,10 @@ from rest_framework.routers import DefaultRouter
 
 from apps.accounts import views as accounts
 from apps.audit.views import AuditLogViewSet
+from apps.billing.views import PatientBalanceViewSet, PaymentViewSet
 from apps.catalog.views import ServiceCategoryViewSet, ServiceViewSet
 from apps.clinical.views import PrescriptionViewSet
+from apps.dental.views import ProcedureViewSet, ToothRecordViewSet, TreatmentPlanViewSet
 from apps.imaging.views import AttachmentViewSet
 from apps.patients.views import PatientViewSet
 from apps.scheduling.views import AppointmentViewSet, ChairViewSet
@@ -26,6 +28,11 @@ router.register("chairs", ChairViewSet, basename="chair")
 router.register("appointments", AppointmentViewSet, basename="appointment")
 router.register("prescriptions", PrescriptionViewSet, basename="prescription")
 router.register("attachments", AttachmentViewSet, basename="attachment")
+router.register("tooth-records", ToothRecordViewSet, basename="tooth-record")
+router.register("treatment-plans", TreatmentPlanViewSet, basename="treatment-plan")
+router.register("procedures", ProcedureViewSet, basename="procedure")
+router.register("payments", PaymentViewSet, basename="payment")
+router.register("balances", PatientBalanceViewSet, basename="balance")
 router.register("audit-logs", AuditLogViewSet, basename="audit-log")
 
 api_v1 = [
