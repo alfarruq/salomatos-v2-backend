@@ -10,6 +10,13 @@ from apps.billing.views import PatientBalanceViewSet, PaymentViewSet
 from apps.catalog.views import ServiceCategoryViewSet, ServiceViewSet
 from apps.clinical.views import PrescriptionViewSet
 from apps.dental.views import ProcedureViewSet, ToothRecordViewSet, TreatmentPlanViewSet
+from apps.finance.views import (
+    CompensationViewSet,
+    ExpenseViewSet,
+    PayrollViewSet,
+    RecurringExpenseViewSet,
+    ReportViewSet,
+)
 from apps.imaging.views import AttachmentViewSet
 from apps.patients.views import PatientViewSet
 from apps.scheduling.views import AppointmentViewSet, ChairViewSet
@@ -33,6 +40,9 @@ router.register("treatment-plans", TreatmentPlanViewSet, basename="treatment-pla
 router.register("procedures", ProcedureViewSet, basename="procedure")
 router.register("payments", PaymentViewSet, basename="payment")
 router.register("balances", PatientBalanceViewSet, basename="balance")
+router.register("expenses", ExpenseViewSet, basename="expense")
+router.register("recurring-expenses", RecurringExpenseViewSet, basename="recurring-expense")
+router.register("compensations", CompensationViewSet, basename="compensation")
 router.register("audit-logs", AuditLogViewSet, basename="audit-log")
 
 api_v1 = [
@@ -42,6 +52,10 @@ api_v1 = [
     path("auth/me/", accounts.MeView.as_view(), name="me"),
     path("auth/change-password/", accounts.ChangePasswordView.as_view(), name="change-password"),
     path("clinic/", CurrentClinicView.as_view(), name="current-clinic"),
+    # Routed by hand: these views compute rows, so they have no detail route.
+    path("payroll/", PayrollViewSet.as_view({"get": "list"}), name="payroll-list"),
+    path("payroll/pay/", PayrollViewSet.as_view({"post": "pay"}), name="payroll-pay"),
+    path("reports/finance/", ReportViewSet.as_view({"get": "finance"}), name="report-finance"),
     *router.urls,
 ]
 
