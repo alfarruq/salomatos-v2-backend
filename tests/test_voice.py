@@ -117,7 +117,7 @@ def test_prescription_items(world, model):
                 {
                     "medicine": "Ibuprofen",
                     "dose": "",
-                    "form": "",
+                    "form": "pill",
                     "times_per_day": 0,
                     "duration_days": None,
                     "meal_relation": "never",
@@ -135,6 +135,7 @@ def test_prescription_items(world, model):
     assert body["medicines"][0]["times_per_day"] == 3
     assert body["medicines"][1]["times_per_day"] is None
     assert body["medicines"][1]["meal_relation"] == "any"
+    assert body["medicines"][1]["form"] == ""
 
 
 def test_patient_context_is_tenant_and_doctor_scoped(world, model):

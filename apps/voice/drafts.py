@@ -89,6 +89,8 @@ PROCEDURE_SCHEMA = _object(
 )
 
 MEAL_CHOICES = [choice for choice, _ in PrescriptionItem.MealRelation.choices]
+# The codes the frontend's prescription editor writes into the free-text `form` field.
+DOSE_FORMS = ["tablet", "capsule", "sachet", "gel", "spray", "drops", "injection", "cream", "rinse"]
 
 PRESCRIPTION_SCHEMA = _object(
     {
@@ -97,9 +99,13 @@ PRESCRIPTION_SCHEMA = _object(
             "type": "array",
             "items": _object(
                 {
-                    "medicine": {"type": "string", "description": "Medicine name in its usual Latin spelling."},
-                    "dose": {"type": "string", "description": "e.g. 500 mg"},
-                    "form": {"type": "string", "description": "e.g. tablet, capsule, rinse"},
+                    "medicine": {
+                        "type": "string",
+                        "description": "Medicine name in its usual Latin spelling, with the strength if said, e.g. "
+                        "Amoxicillin 500 mg.",
+                    },
+                    "dose": {"type": "string", "description": "Units taken at a time, digits only, e.g. 1 or 2."},
+                    "form": {"enum": [*DOSE_FORMS, ""]},
                     "times_per_day": NULLABLE_INT,
                     "duration_days": NULLABLE_INT,
                     "meal_relation": {"enum": MEAL_CHOICES},
@@ -260,7 +266,7 @@ def build_draft(request, form: str, text: str, patient: Patient | None) -> tuple
                 {
                     "medicine": _clean(item.get("medicine"), 255),
                     "dose": _clean(item.get("dose"), 64),
-                    "form": _clean(item.get("form"), 64),
+                    "form": item.get("form") if item.get("form") in DOSE_FORMS else "",
                     "times_per_day": _count(item.get("times_per_day"), 24),
                     "duration_days": _count(item.get("duration_days"), 365),
                     "meal_relation": meal if meal in MEAL_CHOICES else PrescriptionItem.MealRelation.ANY,
