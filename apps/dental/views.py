@@ -4,7 +4,7 @@ from django_filters import rest_framework as filters
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from apps.audit.models import AuditLog
@@ -235,7 +235,18 @@ class ProcedureViewSet(
         return ProcedureUpdateSerializer if self.action == "partial_update" else ProcedureSerializer
 
     def scope_queryset(self, queryset):
-        return queryset.filter(patient_filter(self.request)).distinct()
+        queryset = queryset.filter(patient_filter(self.request)).distinct()
+        if self.has_perm("patient:view_all") or self.request.query_params.get("patient"):
+            # One patient's history is the whole of it: the next doctor needs
+            # to know what a colleague already did to that tooth.
+            return queryset
+        # The treatments list is a doctor's own work.
+        return queryset.filter(doctor=self.request.membership)
+
+    def perform_update(self, serializer):
+        if not self.has_perm("patient:view_all") and serializer.instance.doctor_id != self.request.membership.pk:
+            raise PermissionDenied("You can only change your own procedures.")
+        super().perform_update(serializer)
 
     @transaction.atomic
     def perform_create(self, serializer):

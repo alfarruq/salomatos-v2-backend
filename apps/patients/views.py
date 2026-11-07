@@ -4,6 +4,7 @@ from django_filters import rest_framework as filters
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.audit.models import AuditLog
@@ -52,6 +53,30 @@ class PatientViewSet(
     def scope_queryset(self, queryset):
         # A doctor sees patients assigned to them or booked with them.
         return queryset.filter(patient_filter(self.request, prefix="")).distinct()
+
+    def _guard_primary_doctor(self, serializer):
+        """A doctor registers patients to themselves and cannot hand one to a colleague.
+
+        Otherwise a patient the doctor just added could vanish from their own
+        list, and a doctor could move a patient between colleagues' lists.
+        """
+        if self.has_perm("patient:view_all"):
+            return
+        me = self.request.membership
+        data = serializer.validated_data
+        current = serializer.instance.primary_doctor if serializer.instance else None
+        if serializer.instance is None and data.get("primary_doctor") is None:
+            data["primary_doctor"] = me
+        elif "primary_doctor" in data and data["primary_doctor"] not in (me, current):
+            raise PermissionDenied("A doctor registers patients to themselves.")
+
+    def perform_create(self, serializer):
+        self._guard_primary_doctor(serializer)
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        self._guard_primary_doctor(serializer)
+        super().perform_update(serializer)
 
     def filter_queryset(self, queryset):
         queryset = super().filter_queryset(queryset)
