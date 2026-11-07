@@ -208,7 +208,7 @@ class ProcedureFilter(PatientRecordFilter):
 
     class Meta:
         model = Procedure
-        fields = ["service"]
+        fields = ["service", "status"]
 
 
 class ProcedureViewSet(
@@ -228,6 +228,7 @@ class ProcedureViewSet(
         "retrieve": "procedure:view",
         "create": "procedure:manage",
         "partial_update": "procedure:manage",
+        "complete": "procedure:manage",
         "void": "procedure:void",
     }
 
@@ -243,24 +244,54 @@ class ProcedureViewSet(
         # The treatments list is a doctor's own work.
         return queryset.filter(doctor=self.request.membership)
 
-    def perform_update(self, serializer):
-        if not self.has_perm("patient:view_all") and serializer.instance.doctor_id != self.request.membership.pk:
+    def _ensure_own(self, procedure):
+        if not self.has_perm("patient:view_all") and procedure.doctor_id != self.request.membership.pk:
             raise PermissionDenied("You can only change your own procedures.")
+
+    def perform_update(self, serializer):
+        self._ensure_own(serializer.instance)
         super().perform_update(serializer)
 
     @transaction.atomic
     def perform_create(self, serializer):
         ensure_patient_visible(self.request, serializer.validated_data["patient"])
         self.assign_doctor(serializer)
+        if serializer.validated_data.get("status") != Procedure.Status.IN_PROGRESS:
+            serializer.validated_data["completed_by"] = self.request.membership
         super().perform_create(serializer)
-        plan_item = serializer.instance.plan_item
-        if plan_item is not None:
-            plan_item.status = PlanItem.Status.DONE
-            plan_item.save(update_fields=["status", "updated_at"])
-            plan = plan_item.plan
-            if not plan.items.filter(status=PlanItem.Status.PLANNED).exists():
-                plan.status = TreatmentPlan.Status.COMPLETED
-                plan.save(update_fields=["status", "updated_at"])
+        if serializer.instance.status == Procedure.Status.COMPLETED:
+            self._close_plan_item(serializer.instance)
+
+    @staticmethod
+    def _close_plan_item(procedure):
+        # A plan item is done only when its work is finished, not when it starts.
+        plan_item = procedure.plan_item
+        if plan_item is None:
+            return
+        plan_item.status = PlanItem.Status.DONE
+        plan_item.save(update_fields=["status", "updated_at"])
+        plan = plan_item.plan
+        if not plan.items.filter(status=PlanItem.Status.PLANNED).exists():
+            plan.status = TreatmentPlan.Status.COMPLETED
+            plan.save(update_fields=["status", "updated_at"])
+
+    @extend_schema(request=None, responses={200: ProcedureSerializer})
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def complete(self, request, pk=None):
+        procedure = self.get_object()
+        self._ensure_own(procedure)
+        if procedure.voided_at is not None:
+            raise ValidationError("A voided procedure cannot be completed.", code="voided")
+        if procedure.status == Procedure.Status.COMPLETED:
+            raise ValidationError("Already completed.", code="already_completed")
+        procedure.status = Procedure.Status.COMPLETED
+        procedure.completed_at = timezone.now()
+        procedure.completed_by = request.membership
+        procedure.save(update_fields=["status", "completed_at", "completed_by", "updated_at"])
+        self._close_plan_item(procedure)
+        record(request, AuditLog.Action.UPDATE, procedure)
+        return Response(ProcedureSerializer(procedure, context=self.get_serializer_context()).data)
 
     @extend_schema(request=VoidSerializer, responses={200: ProcedureSerializer})
     @action(detail=True, methods=["post"])

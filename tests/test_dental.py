@@ -164,3 +164,96 @@ def test_owner_sees_procedures_of_all_branches(world, services):
     assert len(rows) == 1
     assert rows[0]["patient_name"] == world.patient_a.full_name
     assert world.client(world.admin_b).get("/api/v1/procedures/").json()["results"] == []
+
+
+# Procedure status
+
+
+def test_procedure_is_completed_unless_started_in_progress(world, services):
+    doctor = world.client(world.doctor_a)
+    base = {"patient": str(world.patient_a.pk), "service": str(services["filling"].pk), "tooth": 36}
+    done = doctor.post("/api/v1/procedures/", base, format="json").json()
+    assert done["status"] == "completed"
+    assert done["completed_at"] == done["performed_at"]
+    started = doctor.post("/api/v1/procedures/", {**base, "status": "in_progress"}, format="json").json()
+    assert started["status"] == "in_progress"
+    assert started["completed_at"] is None
+    rows = doctor.get(f"/api/v1/procedures/?patient={world.patient_a.pk}&status=in_progress").json()["results"]
+    assert [row["id"] for row in rows] == [started["id"]]
+
+
+def test_in_progress_charge_is_owed_and_cannot_be_completed_by_patch(world, services):
+    doctor = world.client(world.doctor_a)
+    created = doctor.post(
+        "/api/v1/procedures/",
+        {"patient": str(world.patient_a.pk), "service": str(services["crown"].pk), "status": "in_progress"},
+        format="json",
+    ).json()
+    url = f"/api/v1/procedures/{created['id']}/"
+    doctor.patch(url, {"status": "completed"}, format="json")
+    assert doctor.get(url).json()["status"] == "in_progress"
+    balance = world.client(world.admin_a).get(f"/api/v1/balances/{world.patient_a.pk}/").json()
+    assert balance["debt"] == "1500000.00"
+
+
+def test_complete_moves_status_and_closes_plan_item(world, services):
+    doctor = world.client(world.doctor_a)
+    plan = accepted_plan(doctor, world, services)
+    item = plan.items.first()
+    created = doctor.post(
+        "/api/v1/procedures/",
+        {
+            "patient": str(world.patient_a.pk),
+            "service": str(item.service_id),
+            "plan_item": str(item.pk),
+            "status": "in_progress",
+        },
+        format="json",
+    ).json()
+    item.refresh_from_db()
+    assert item.status == PlanItem.Status.PLANNED
+    url = f"/api/v1/procedures/{created['id']}/complete/"
+    response = doctor.post(url)
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["completed_at"] is not None
+    item.refresh_from_db()
+    assert item.status == PlanItem.Status.DONE
+    assert doctor.post(url).status_code == 400
+
+
+def test_complete_is_own_work_and_not_after_void(world, services):
+    created = (
+        world.client(world.doctor_a)
+        .post(
+            "/api/v1/procedures/",
+            {"patient": str(world.patient_a.pk), "service": str(services["filling"].pk), "status": "in_progress"},
+            format="json",
+        )
+        .json()
+    )
+    url = f"/api/v1/procedures/{created['id']}/"
+    admin = world.client(world.admin_a)
+    assert admin.post(url + "void/", {"reason": "Wrong patient"}, format="json").status_code == 200
+    assert admin.post(url + "complete/").status_code == 400
+    assert world.client(world.admin_b).post(url + "complete/").status_code == 404
+
+
+def test_doctor_cannot_complete_a_colleagues_procedure(world, services):
+    created = (
+        world.client(world.admin_a)
+        .post(
+            "/api/v1/procedures/",
+            {
+                "patient": str(world.patient_a2.pk),
+                "doctor": str(world.doctor_a2.pk),
+                "service": str(services["filling"].pk),
+                "status": "in_progress",
+            },
+            format="json",
+        )
+        .json()
+    )
+    url = f"/api/v1/procedures/{created['id']}/complete/"
+    assert world.client(world.doctor_a).post(url).status_code in (403, 404)
+    assert world.client(world.doctor_a2).post(url).status_code == 200
