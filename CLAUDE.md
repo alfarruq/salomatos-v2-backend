@@ -47,7 +47,7 @@ apps/clinical    Prescription, PrescriptionItem, PDF
 apps/imaging     Attachment (X-ray, photo) with private download
 apps/dental      ToothRecord + ToothEvent (chart, FDI), TreatmentPlan + PlanItem, Procedure
 apps/billing     Payment (manual entry: cash/card/transfer), patient balance and debtors
-apps/finance     Expense, RecurringExpense, Compensation (doctor pay terms), payroll, finance report
+apps/finance     Expense, RecurringExpense, Compensation (doctor pay terms), payroll, finance and statistics reports
 ```
 
 - **Money is append-only.** Procedures, payments and expenses are never edited or deleted;
