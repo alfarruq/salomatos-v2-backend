@@ -123,7 +123,15 @@ class Procedure(BaseModel, PricedLine):
 
     Never deleted: a mistaken entry is voided with a reason, so the patient's
     balance history stays explainable.
+
+    `status` is clinical only: work that spans visits (a root canal, a crown)
+    stays in progress until the doctor completes it. The charge is owed from the
+    moment the line is created either way, so money never depends on it.
     """
+
+    class Status(models.TextChoices):
+        IN_PROGRESS = "in_progress", "In progress"
+        COMPLETED = "completed", "Completed"
 
     clinic = models.ForeignKey("tenancy.Clinic", on_delete=models.PROTECT, related_name="procedures")
     patient = models.ForeignKey("patients.Patient", on_delete=models.PROTECT, related_name="procedures")
@@ -138,6 +146,9 @@ class Procedure(BaseModel, PricedLine):
     tooth = models.PositiveSmallIntegerField(null=True, blank=True, validators=[validate_fdi_tooth])
     surfaces = models.JSONField(default=list, blank=True)
     performed_at = models.DateTimeField()
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.COMPLETED)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    completed_by = models.ForeignKey("tenancy.Membership", on_delete=models.SET_NULL, null=True, related_name="+")
     notes = models.TextField(blank=True)
     voided_at = models.DateTimeField(null=True, blank=True)
     voided_by = models.ForeignKey("tenancy.Membership", on_delete=models.SET_NULL, null=True, related_name="+")

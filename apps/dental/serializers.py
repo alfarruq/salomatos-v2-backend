@@ -181,11 +181,13 @@ class ProcedureSerializer(serializers.ModelSerializer):
             "discount_percent",
             "total",
             "performed_at",
+            "status",
+            "completed_at",
             "notes",
             "voided_at",
             "void_reason",
         ]
-        read_only_fields = ["id", "clinic", "voided_at", "void_reason"]
+        read_only_fields = ["id", "clinic", "completed_at", "voided_at", "void_reason"]
 
     def validate(self, attrs):
         require_tooth_for_surfaces(attrs)
@@ -214,6 +216,8 @@ class ProcedureSerializer(serializers.ModelSerializer):
         elif attrs.get("unit_price") is None:
             attrs["unit_price"] = attrs["service"].price
         attrs.setdefault("performed_at", timezone.now())
+        if attrs.get("status", Procedure.Status.COMPLETED) == Procedure.Status.COMPLETED:
+            attrs["completed_at"] = attrs["performed_at"]
         return attrs
 
 
