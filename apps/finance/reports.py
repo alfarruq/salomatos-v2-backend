@@ -63,12 +63,12 @@ def expense_summary(clinic_ids, period: DateRange, *, include_payroll: bool) -> 
     }
 
 
-def _window(period: DateRange, zone):
+def window(period: DateRange, zone):
     return start_of(period.start, zone), start_of(period.end + timedelta(days=1), zone)
 
 
 def _income_totals(clinic_ids, period: DateRange, zone, *, include_payroll: bool) -> dict:
-    start, end = _window(period, zone)
+    start, end = window(period, zone)
     billed = (
         Procedure.objects.filter(clinic_id__in=clinic_ids, voided_at__isnull=True, performed_at__gte=start)
         .filter(performed_at__lt=end)
@@ -90,7 +90,7 @@ def _income_totals(clinic_ids, period: DateRange, zone, *, include_payroll: bool
 
 
 def finance_overview(clinic_ids, period: DateRange, zone, *, include_payroll: bool) -> dict:
-    start, end = _window(period, zone)
+    start, end = window(period, zone)
     procedures = Procedure.objects.filter(
         clinic_id__in=clinic_ids, voided_at__isnull=True, performed_at__gte=start, performed_at__lt=end
     )

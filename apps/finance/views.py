@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from apps.audit.models import AuditLog
 from apps.audit.services import record
 from apps.dental.serializers import VoidSerializer
-from apps.finance import payroll, reports
+from apps.finance import payroll, reports, statistics
 from apps.finance.models import PAYROLL_CATEGORIES, Category, Compensation, Expense, RecurringExpense, RecurringSkip
 from apps.finance.periods import add_months, clinic_zone, local_day, parse_month, parse_range
 from apps.finance.serializers import (
@@ -29,6 +29,7 @@ from apps.finance.serializers import (
     RecurringExpenseSerializer,
     RecurringPaySerializer,
     RecurringSkipSerializer,
+    StatisticsOverviewSerializer,
     clinic_today,
 )
 from apps.tenancy.models import Clinic, Membership
@@ -337,8 +338,8 @@ class ReportViewSet(ClinicScopedMixin, viewsets.GenericViewSet):
 
     queryset = Clinic.objects.none()
     serializer_class = FinanceOverviewSerializer
-    organization_actions = frozenset({"finance"})
-    required_permissions = {"finance": "report:view"}
+    organization_actions = frozenset({"finance", "statistics"})
+    required_permissions = {"finance": "report:view", "statistics": "report:view"}
 
     def get_queryset(self):
         return self.queryset
@@ -351,3 +352,10 @@ class ReportViewSet(ClinicScopedMixin, viewsets.GenericViewSet):
             request.clinic_ids, period, clinic_zone(request), include_payroll=self.has_perm("payroll:view")
         )
         return Response(FinanceOverviewSerializer(data).data)
+
+    @extend_schema(parameters=RANGE_PARAMS, responses={200: StatisticsOverviewSerializer})
+    @action(detail=False, methods=["get"])
+    def statistics(self, request):
+        period = parse_range(request.query_params)
+        data = statistics.statistics_overview(request.clinic_ids, period, clinic_zone(request))
+        return Response(StatisticsOverviewSerializer(data).data)

@@ -311,3 +311,62 @@ class FinanceOverviewSerializer(RangeFields):
     payment_methods = MethodAmountSerializer(many=True)
     doctors = DoctorAmountSerializer(many=True)
     services = ServiceAmountSerializer(many=True)
+
+
+class StatisticsTotalsSerializer(serializers.Serializer):
+    appointments = serializers.IntegerField()
+    appointments_completed = serializers.IntegerField()
+    no_shows = serializers.IntegerField()
+    cancellations = serializers.IntegerField()
+    new_patients = serializers.IntegerField()
+    returning_patients = serializers.IntegerField()
+    procedures = serializers.IntegerField()
+    plans_accepted = serializers.IntegerField()
+
+
+class AppointmentsPointSerializer(serializers.Serializer):
+    start = serializers.DateField()
+    total = serializers.IntegerField()
+    completed = serializers.IntegerField()
+
+
+class CountPointSerializer(serializers.Serializer):
+    start = serializers.DateField()
+    count = serializers.IntegerField()
+
+
+class DoctorLoadSerializer(serializers.Serializer):
+    doctor = serializers.UUIDField()
+    doctor_name = serializers.CharField()
+    clinic_name = serializers.CharField()
+    appointments = serializers.IntegerField()
+    appointments_completed = serializers.IntegerField()
+    procedures = serializers.IntegerField()
+
+
+class ServiceCountSerializer(serializers.Serializer):
+    service = serializers.UUIDField()
+    service_name = serializers.CharField()
+    count = serializers.IntegerField()
+
+
+class BusySlotSerializer(serializers.Serializer):
+    weekday = serializers.IntegerField(min_value=1, max_value=7, help_text="ISO weekday, 1 = Monday.")
+    hour = serializers.IntegerField(min_value=0, max_value=23, help_text="Clinic-time hour.")
+    appointments = serializers.IntegerField()
+
+
+class ToothCountSerializer(serializers.Serializer):
+    tooth = serializers.IntegerField(help_text="FDI number.")
+    count = serializers.IntegerField()
+
+
+class StatisticsOverviewSerializer(RangeFields):
+    totals = StatisticsTotalsSerializer()
+    previous_totals = StatisticsTotalsSerializer()
+    appointments_series = AppointmentsPointSerializer(many=True)
+    procedures_series = CountPointSerializer(many=True)
+    doctors = DoctorLoadSerializer(many=True)
+    services = ServiceCountSerializer(many=True)
+    busy_slots = BusySlotSerializer(many=True)
+    teeth = ToothCountSerializer(many=True)
