@@ -29,6 +29,9 @@ NOTHING = "Hozircha ma'lumot yo'q."
 NO_DOCTOR = "Sizga hali doktor biriktirilmagan."
 NO_ROLE = "Bu hisob uchun botda bo'lim yo'q."
 PASSWORD_DELETED_NOTE = "Xavfsizlik uchun parolli xabar o'chirildi."
+NOT_DELIVERED = "Bitta xabar yoki fayl yuborilmadi. Uni klinikadan so'rang."
+SOMETHING_WRONG = "Xatolik yuz berdi. Birozdan keyin qayta urinib ko'ring."
+FILE_TOO_BIG = "Fayl Telegram uchun juda katta. Uni klinikadan so'rang."
 
 KIND_LABELS = {
     "xray": "Rentgen",

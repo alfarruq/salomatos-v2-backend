@@ -99,7 +99,9 @@ def authenticate(chat_id: int, login: str, password: str) -> tuple[str, BotAccou
     """
     now = timezone.now()
     with transaction.atomic():
-        account = BotAccount.objects.select_for_update().filter(login=login.strip()).first()
+        # People copy a login with spaces or dashes ("1234 5678"); only the digits matter.
+        typed = "".join(ch for ch in login if ch.isdigit())
+        account = BotAccount.objects.select_for_update().filter(login=typed).first()
         if account is None:
             return LoginResult.INVALID, None
         if account.locked_until is not None and account.locked_until > now:

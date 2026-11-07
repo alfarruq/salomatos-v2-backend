@@ -18,6 +18,7 @@ from apps.clinical.pdf import prescription_pdf
 
 PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 RX_PREFIX = "rx:"
+FILE_LIMIT = 50 * 1024 * 1024
 
 
 @dataclass
@@ -145,6 +146,10 @@ def _patient(account: BotAccount, text: str) -> Reply:
         for item in items:
             record_bot(account, AuditLog.Action.EXPORT, item)
             suffix = Path(item.file.name).suffix.lower()
+            if item.size_bytes > FILE_LIMIT:
+                # Telegram refuses bot uploads over 50 MB; say so instead of reading it into memory.
+                messages.append(Out(text=f"{texts.attachment_caption(item)}: {texts.FILE_TOO_BIG}"))
+                continue
             with item.file.open("rb") as handle:
                 data = handle.read()
             file = OutgoingFile(name=f"{item.kind}-{item.pk}{suffix}", data=data, is_photo=suffix in PHOTO_SUFFIXES)

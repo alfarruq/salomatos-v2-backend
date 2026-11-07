@@ -247,3 +247,25 @@ def test_doctor_gets_no_owner_report_and_patient_no_staff_menu(world):
     assert CHAT not in dict(dialog.evening_reports())
     reply = dialog.handle_text(OTHER_CHAT, texts.BTN_REPORT, {})
     assert texts.BTN_REPORT not in sum(reply.keyboard, [])
+
+
+def test_login_typed_with_spaces_still_works(world):
+    account = world.patient_a.bot_account
+    spaced = f"{account.login[:4]} {account.login[4:]}"
+    assert authenticate(CHAT, spaced, creds(account).password)[0] == LoginResult.OK
+
+
+def test_gallery_skips_files_too_big_for_telegram(world):
+    from apps.imaging.models import Attachment
+
+    Attachment.objects.create(
+        clinic=world.branch_a,
+        patient=world.patient_a,
+        kind=Attachment.Kind.CBCT,
+        file="clinics/x/attachments/big.dcm",
+        size_bytes=dialog.FILE_LIMIT + 1,
+    )
+    sign_in(CHAT, world.patient_a.bot_account)
+    reply = dialog.handle_text(CHAT, texts.BTN_GALLERY, {})
+    assert reply.messages[0].file is None
+    assert texts.FILE_TOO_BIG in reply.messages[0].text

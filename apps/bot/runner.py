@@ -10,16 +10,19 @@ from zoneinfo import ZoneInfo
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
+from django.db import close_old_connections
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.error import TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
-from apps.bot import dialog
+from apps.bot import dialog, texts
 
 logger = logging.getLogger(__name__)
 
 MORNING = time(7, 0)
 EVENING = time(20, 0)
+# Bot API upload limits: photos 10 MB, other files 50 MB.
+PHOTO_LIMIT = 10 * 1024 * 1024
 
 
 def _keyboard(rows):
@@ -28,6 +31,39 @@ def _keyboard(rows):
     if not rows:
         return ReplyKeyboardRemove()
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+
+def _with_fresh_connection(function):
+    """A request/response cycle for the bot: Django only recycles DB connections around
+    HTTP requests, so a process that runs for weeks would otherwise keep a connection
+    the database dropped long ago and fail on every message after a Postgres restart."""
+
+    def run(*args, **kwargs):
+        close_old_connections()
+        try:
+            return function(*args, **kwargs)
+        finally:
+            close_old_connections()
+
+    return sync_to_async(run)
+
+
+async def _send_one(bot, chat_id: int, out: dialog.Out, markup) -> None:
+    file = out.file
+    if file is None:
+        if out.text:
+            await bot.send_message(chat_id=chat_id, text=out.text, reply_markup=markup)
+        return
+    if file.is_photo and len(file.data) <= PHOTO_LIMIT:
+        try:
+            await bot.send_photo(chat_id=chat_id, photo=file.data, caption=out.text, reply_markup=markup)
+            return
+        except TelegramError:
+            # Telegram rejects some images as photos (size, ratio); a document always works.
+            pass
+    await bot.send_document(
+        chat_id=chat_id, document=file.data, filename=file.name, caption=out.text, reply_markup=markup
+    )
 
 
 async def _send(update: Update, context: ContextTypes.DEFAULT_TYPE, reply: dialog.Reply) -> None:
@@ -47,36 +83,46 @@ async def _send(update: Update, context: ContextTypes.DEFAULT_TYPE, reply: dialo
             )
         elif index == last:
             markup = _keyboard(reply.keyboard)
-        if out.file is not None:
-            send = context.bot.send_photo if out.file.is_photo else context.bot.send_document
-            kwargs = (
-                {"photo": out.file.data}
-                if out.file.is_photo
-                else {"document": out.file.data, "filename": out.file.name}
-            )
-            await send(chat_id=chat_id, caption=out.text, reply_markup=markup, **kwargs)
-        elif out.text:
-            await context.bot.send_message(chat_id=chat_id, text=out.text, reply_markup=markup)
+        try:
+            await _send_one(context.bot, chat_id, out, markup)
+        except TelegramError as error:
+            # One file Telegram refuses must not hide the rest of the gallery.
+            logger.warning("A bot message was not delivered: %s", type(error).__name__)
+            await context.bot.send_message(chat_id=chat_id, text=texts.NOT_DELIVERED)
 
 
 async def on_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    reply = await sync_to_async(dialog.handle_start)(update.effective_chat.id, context.chat_data)
+    reply = await _with_fresh_connection(dialog.handle_start)(update.effective_chat.id, context.chat_data)
     await _send(update, context, reply)
 
 
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    reply = await sync_to_async(dialog.handle_text)(update.effective_chat.id, update.message.text, context.chat_data)
+    reply = await _with_fresh_connection(dialog.handle_text)(
+        update.effective_chat.id, update.message.text, context.chat_data
+    )
     await _send(update, context, reply)
 
 
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
-    reply = await sync_to_async(dialog.handle_callback)(update.effective_chat.id, update.callback_query.data or "")
+    reply = await _with_fresh_connection(dialog.handle_callback)(
+        update.effective_chat.id, update.callback_query.data or ""
+    )
     await _send(update, context, reply)
 
 
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # The type only: an exception's text or the update can hold a password or a name.
+    logger.error("Bot handler failed: %s", type(context.error).__name__)
+    if isinstance(update, Update) and update.effective_chat is not None:
+        try:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=texts.SOMETHING_WRONG)
+        except TelegramError:
+            pass
+
+
 async def _broadcast(context: ContextTypes.DEFAULT_TYPE, build) -> None:
-    for chat_id, text in await sync_to_async(build)():
+    for chat_id, text in await _with_fresh_connection(build)():
         try:
             await context.bot.send_message(chat_id=chat_id, text=text)
         except TelegramError:
@@ -100,6 +146,7 @@ def build_application(token: str) -> Application:
     application.add_handler(CommandHandler("start", on_start, filters=private))
     application.add_handler(MessageHandler(private & filters.TEXT & ~filters.COMMAND, on_text))
     application.add_handler(CallbackQueryHandler(on_callback))
+    application.add_error_handler(on_error)
     zone = ZoneInfo(settings.TIME_ZONE)
     application.job_queue.run_daily(morning_job, time=MORNING.replace(tzinfo=zone), name="doctor-morning")
     application.job_queue.run_daily(evening_job, time=EVENING.replace(tzinfo=zone), name="owner-evening")
