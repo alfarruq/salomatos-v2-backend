@@ -42,6 +42,8 @@ _ADMIN = _DOCTOR | {
     "procedure:void",
     "payment:manage",
     "report:view",
+    "expense:view",
+    "expense:manage",
 }
 
 _OWNER = _ADMIN | {
@@ -49,6 +51,9 @@ _OWNER = _ADMIN | {
     "staff:manage_owners",
     "audit:view",
     "payment:void",
+    "expense:void",
+    "payroll:view",
+    "payroll:manage",
 }
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {

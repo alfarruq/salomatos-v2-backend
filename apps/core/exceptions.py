@@ -42,7 +42,9 @@ class APIExceptionFormatter:
                 elif isinstance(value, dict):
                     self.detail[key] = value
                 else:
-                    self.detail[key] = str(value)
+                    # A view's own `ValidationError({"field": "text"}, code=...)`
+                    # arrives unwrapped; the client reads the code, not the prose.
+                    self.detail[key] = value.code if isinstance(value, ErrorDetail) else str(value)
 
         if isinstance(exception, MethodNotAllowed):
             self.message = self.detail

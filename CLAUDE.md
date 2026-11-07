@@ -47,11 +47,16 @@ apps/clinical    Prescription, PrescriptionItem, PDF
 apps/imaging     Attachment (X-ray, photo) with private download
 apps/dental      ToothRecord + ToothEvent (chart, FDI), TreatmentPlan + PlanItem, Procedure
 apps/billing     Payment (manual entry: cash/card/transfer), patient balance and debtors
+apps/finance     Expense, RecurringExpense, Compensation (doctor pay terms), payroll, finance report
 ```
 
-- **Money is append-only.** Procedures and payments are never edited or deleted;
+- **Money is append-only.** Procedures, payments and expenses are never edited or deleted;
   a mistake is voided with a reason (`void` action). Prices are copied onto the
   line when it is created, so price list changes never rewrite history.
+- **Pay is owner-only.** `doctor_share`/`staff_salary` expenses, compensation and
+  payroll need `payroll:*`; admins never receive those rows. A doctor's share of
+  collected money is attributed by applying each patient's payments to their
+  oldest unpaid procedure first (`apps/finance/allocation.py`).
 
 Patients do not log in. They will reach their data only through the Telegram bot
 (planned), which must authenticate with a one-time link code, never by phone number.
