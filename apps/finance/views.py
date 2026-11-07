@@ -1,7 +1,11 @@
+from collections import defaultdict
 from datetime import date
 from decimal import Decimal
+from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
 from drf_spectacular.types import OpenApiTypes
@@ -13,13 +17,17 @@ from rest_framework.response import Response
 
 from apps.audit.models import AuditLog
 from apps.audit.services import record
+from apps.billing.balance import PROCEDURE_TOTAL
+from apps.dental.models import Procedure
 from apps.dental.serializers import VoidSerializer
-from apps.finance import payroll, reports, statistics
+from apps.finance import allocation, payroll, reports, statistics
+from apps.finance.allocation import CENT
 from apps.finance.models import PAYROLL_CATEGORIES, Category, Compensation, Expense, RecurringExpense, RecurringSkip
-from apps.finance.periods import add_months, clinic_zone, local_day, parse_month, parse_range
+from apps.finance.periods import add_months, clinic_zone, local_day, parse_month, parse_range, start_of
 from apps.finance.serializers import (
     CompensationSerializer,
     DueMonthSerializer,
+    EarningsSerializer,
     ExpenseSerializer,
     ExpenseSummarySerializer,
     FinanceOverviewSerializer,
@@ -32,8 +40,18 @@ from apps.finance.serializers import (
     StatisticsOverviewSerializer,
     clinic_today,
 )
+from apps.patients.access import visible_patients
 from apps.tenancy.models import Clinic, Membership
 from apps.tenancy.viewsets import ClinicScopedMixin
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        UUID(value)
+    except ValueError:
+        return False
+    return True
+
 
 MONTH_PARAM = OpenApiParameter("month", OpenApiTypes.STR, required=True, description="YYYY-MM")
 RANGE_PARAMS = [
@@ -304,7 +322,10 @@ class PayrollViewSet(ClinicScopedMixin, viewsets.GenericViewSet):
         rows = []
         for clinic in Clinic.objects.filter(pk__in=request.clinic_ids).order_by("name"):
             rows.extend(payroll.compute(clinic, month))
-        totals = {key: sum((getattr(row, key) for row in rows), Decimal("0")) for key in ("accrued", "paid", "balance")}
+        totals = {
+            key: sum((getattr(row, key) for row in rows), Decimal("0"))
+            for key in ("accrued", "paid", "balance", "pending_share")
+        }
         return Response(PayrollSerializer({"month": month, "rows": rows, "totals": totals}).data)
 
     @extend_schema(request=PayoutSerializer, responses={201: ExpenseSerializer})
@@ -339,7 +360,7 @@ class ReportViewSet(ClinicScopedMixin, viewsets.GenericViewSet):
     queryset = Clinic.objects.none()
     serializer_class = FinanceOverviewSerializer
     organization_actions = frozenset({"finance", "statistics"})
-    required_permissions = {"finance": "report:view", "statistics": "report:view"}
+    required_permissions = {"finance": "report:view", "statistics": "statistics:view"}
 
     def get_queryset(self):
         return self.queryset
@@ -353,9 +374,100 @@ class ReportViewSet(ClinicScopedMixin, viewsets.GenericViewSet):
         )
         return Response(FinanceOverviewSerializer(data).data)
 
-    @extend_schema(parameters=RANGE_PARAMS, responses={200: StatisticsOverviewSerializer})
+    @staticmethod
+    def _doctor_filter(request):
+        value = request.query_params.get("doctor")
+        if not value:
+            return None
+        doctor = (
+            Membership.objects.filter(clinic_id__in=request.clinic_ids, role=Membership.Role.DOCTOR, pk=value).first()
+            if _is_uuid(value)
+            else None
+        )
+        if doctor is None:
+            # Same answer for a foreign id and a malformed one: do not confirm it exists elsewhere.
+            raise ValidationError({"doctor": "Invalid pk - object does not exist."}, code="does_not_exist")
+        return doctor
+
+    @extend_schema(
+        parameters=[
+            *RANGE_PARAMS,
+            OpenApiParameter(
+                "doctor", OpenApiTypes.UUID, description="Owners only: one doctor. A doctor always sees their own."
+            ),
+        ],
+        responses={200: StatisticsOverviewSerializer},
+    )
     @action(detail=False, methods=["get"])
     def statistics(self, request):
         period = parse_range(request.query_params)
-        data = statistics.statistics_overview(request.clinic_ids, period, clinic_zone(request))
+        if self.has_perm("statistics:view_all"):
+            doctor = self._doctor_filter(request)
+        else:
+            # A doctor's statistics are their own: a `doctor` parameter cannot widen that.
+            doctor = request.membership
+        data = statistics.statistics_overview(request.clinic_ids, period, clinic_zone(request), doctor=doctor)
         return Response(StatisticsOverviewSerializer(data).data)
+
+
+class EarningsViewSet(ClinicScopedMixin, viewsets.GenericViewSet):
+    """The signed-in doctor's own month: what is earned, what waits on patients, and the work behind it.
+
+    The doctor is always the caller, never a parameter, so no one can ask for a
+    colleague's pay here.
+    """
+
+    queryset = Membership.objects.none()
+    serializer_class = EarningsSerializer
+    required_permissions = {"earnings": "payroll:view_own"}
+
+    def get_queryset(self):
+        return self.queryset
+
+    @extend_schema(parameters=[MONTH_PARAM], responses={200: EarningsSerializer})
+    @action(detail=False, methods=["get"])
+    def earnings(self, request):
+        month = parse_month(request.query_params.get("month"))
+        me = request.membership
+        clinic = request.clinic
+        [summary] = payroll.compute(clinic, month, doctor=me) or [payroll.PayrollRow(doctor=me, compensation=None)]
+
+        zone = ZoneInfo(clinic.timezone)
+        until = start_of(add_months(month, 1), zone)
+        allocations, unpaid = allocation.run([clinic.pk], until)
+        paid = defaultdict(Decimal)
+        for line in allocations:
+            if line.doctor_id == me.pk:
+                paid[line.procedure_id] += line.amount
+        still_owed = {line.procedure_id for line in unpaid if line.doctor_id == me.pk}
+        procedures = (
+            Procedure.objects.filter(clinic=clinic, doctor=me, voided_at__isnull=True)
+            .filter(
+                Q(performed_at__gte=start_of(month, zone), performed_at__lt=until)
+                | Q(pk__in=still_owed, performed_at__lt=until)
+            )
+            .annotate(line_total=PROCEDURE_TOTAL)
+            .select_related("patient", "service")
+            .order_by("-performed_at")
+        )
+        visible = set(visible_patients(request).values_list("pk", flat=True))
+        lines = []
+        for procedure in procedures:
+            total = Decimal(procedure.line_total).quantize(CENT)
+            received = paid[procedure.pk]
+            lines.append(
+                {
+                    "procedure": procedure.pk,
+                    "performed_at": procedure.performed_at,
+                    "patient": procedure.patient_id,
+                    "patient_name": procedure.patient.full_name if procedure.patient_id in visible else None,
+                    "service_name": procedure.service.name,
+                    "tooth": procedure.tooth,
+                    "total": total,
+                    "paid": received,
+                    "unpaid": total - received,
+                    "status": "completed" if received >= total else "in_progress",
+                }
+            )
+        record(request, AuditLog.Action.VIEW, me, target_type="finance.earnings")
+        return Response(EarningsSerializer({"month": month, "summary": summary, "lines": lines}).data)

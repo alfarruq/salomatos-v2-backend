@@ -29,16 +29,18 @@ _DOCTOR = {
     "procedure:view",
     "procedure:manage",
     "payment:view",
+    # A doctor's own figures only; views narrow to the caller without `*:view_all`.
+    "statistics:view",
+    "payroll:view_own",
 }
 
-_ADMIN = _DOCTOR | {
-    "staff:manage",
+# The front desk of one branch. Staff, the price list and the clinic profile are
+# the owner's ("Boshqaruv"), and so are statistics.
+_ADMIN = (_DOCTOR - {"statistics:view", "payroll:view_own"}) | {
     "patient:view_all",
     "patient:archive",
     "appointment:view_all",
-    "service:manage",
     "chair:manage",
-    "specialty:manage",
     "procedure:void",
     "payment:manage",
     "report:view",
@@ -48,6 +50,11 @@ _ADMIN = _DOCTOR | {
 
 _OWNER = _ADMIN | {
     "clinic:manage",
+    "staff:manage",
+    "service:manage",
+    "specialty:manage",
+    "statistics:view",
+    "statistics:view_all",
     "staff:manage_owners",
     "audit:view",
     "payment:void",

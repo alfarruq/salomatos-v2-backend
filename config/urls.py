@@ -12,6 +12,7 @@ from apps.clinical.views import PrescriptionViewSet
 from apps.dental.views import ProcedureViewSet, ToothRecordViewSet, TreatmentPlanViewSet
 from apps.finance.views import (
     CompensationViewSet,
+    EarningsViewSet,
     ExpenseViewSet,
     PayrollViewSet,
     RecurringExpenseViewSet,
@@ -56,6 +57,7 @@ api_v1 = [
     path("payroll/", PayrollViewSet.as_view({"get": "list"}), name="payroll-list"),
     path("payroll/pay/", PayrollViewSet.as_view({"post": "pay"}), name="payroll-pay"),
     path("reports/finance/", ReportViewSet.as_view({"get": "finance"}), name="report-finance"),
+    path("me/earnings/", EarningsViewSet.as_view({"get": "earnings"}), name="my-earnings"),
     path("reports/statistics/", ReportViewSet.as_view({"get": "statistics"}), name="report-statistics"),
     *router.urls,
 ]

@@ -10,7 +10,7 @@ from django.db.models import Q
 
 from apps.billing.balance import PROCEDURE_TOTAL
 from apps.dental.models import Procedure
-from apps.finance.allocation import CENT, allocate
+from apps.finance.allocation import CENT, run
 from apps.finance.models import Category, Compensation, Expense
 from apps.finance.periods import add_months, local_day, month_of, start_of
 from apps.tenancy.models import Clinic, Membership
@@ -29,6 +29,10 @@ class PayrollRow:
     opening: Decimal = ZERO
     paid: Decimal = ZERO
     balance: Decimal = ZERO
+    # Work done by the month's end that patients have not paid for yet, and the
+    # doctor's share of it once they do. Not owed yet, so not in the balance.
+    pending: Decimal = ZERO
+    pending_share: Decimal = ZERO
 
 
 @dataclass
@@ -51,7 +55,14 @@ def accrual(terms: Compensation | None, billed: Decimal, collected: Decimal) -> 
     return base, (terms.fixed + base * terms.percent / Decimal(100)).quantize(CENT)
 
 
-def compute(clinic: Clinic, month: date) -> list[PayrollRow]:
+def pending_share(terms: Compensation | None, pending: Decimal) -> Decimal:
+    if terms is None or terms.base != Compensation.Base.COLLECTED:
+        # On billed terms the work already counted when it was done.
+        return ZERO
+    return (pending * terms.percent / Decimal(100)).quantize(CENT)
+
+
+def compute(clinic: Clinic, month: date, *, doctor: Membership | None = None) -> list[PayrollRow]:
     zone = ZoneInfo(clinic.timezone)
     until = start_of(add_months(month, 1), zone)
 
@@ -62,9 +73,11 @@ def compute(clinic: Clinic, month: date) -> list[PayrollRow]:
     doctors = (
         Membership.objects.filter(clinic=clinic)
         .filter(Q(role=Membership.Role.DOCTOR, is_active=True) | Q(pk__in=list(compensations)))
-        .select_related("user")
+        .select_related("user", "clinic")
         .order_by("user__full_name")
     )
+    if doctor is not None:
+        doctors = doctors.filter(pk=doctor.pk)
 
     history: dict = defaultdict(_History)
     procedures = (
@@ -74,8 +87,12 @@ def compute(clinic: Clinic, month: date) -> list[PayrollRow]:
     )
     for doctor_id, at, total in procedures:
         history[doctor_id].billed[month_of(local_day(at, zone))] += Decimal(total).quantize(CENT)
-    for allocation in allocate([clinic.pk], until):
+    allocations, unpaid = run([clinic.pk], until)
+    for allocation in allocations:
         history[allocation.doctor_id].collected[month_of(local_day(allocation.at, zone))] += allocation.amount
+    pending = defaultdict(Decimal)
+    for line in unpaid:
+        pending[line.doctor_id] += line.amount
     payouts = Expense.objects.filter(
         clinic=clinic, category=Category.DOCTOR_SHARE, voided_at__isnull=True, period__lte=month
     ).values_list("doctor_id", "period", "amount")
@@ -99,5 +116,7 @@ def compute(clinic: Clinic, month: date) -> list[PayrollRow]:
         row.base_amount, row.accrued = accrual(row.compensation, row.billed, row.collected)
         row.paid = past.paid[month]
         row.balance = row.opening + row.accrued - row.paid
+        row.pending = pending[doctor.pk]
+        row.pending_share = pending_share(row.compensation, row.pending)
         rows.append(row)
     return rows

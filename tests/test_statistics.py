@@ -106,16 +106,42 @@ def test_statistics_carry_no_patient_data(world, october):
 
 
 def test_statistics_access_and_isolation(world, october):
-    assert world.client(world.doctor_a).get(URL).status_code == 403
-    assert world.client(world.admin_a).get(URL).json()["totals"]["appointments"] == 3
-    assert world.client(world.admin_b).get(URL).json()["totals"]["appointments"] == 0
-    assert world.client(world.other_admin).get(URL).json()["totals"]["procedures"] == 0
+    # Statistics are the owner's; the front desk does not see them.
+    assert world.client(world.admin_a).get(URL).status_code == 403
+    assert world.client(world.other_admin).get(URL).status_code == 403
     # A branch of someone else's organization is not found, whatever the role.
-    assert world.client(world.other_admin, clinic=world.branch_a).get(URL).status_code == 404
+    assert world.client(world.doctor_a, clinic=world.other_clinic).get(URL).status_code == 404
 
     visit(world, "2026-10-08T05:00:00+00:00", patient=world.patient_b, doctor=world.admin_b)
     combined = world.client(world.owner, organization=world.org).get(URL).json()
     assert combined["totals"]["appointments"] == 4
+
+
+def test_a_doctor_sees_only_their_own_statistics(world, october):
+    client = world.client(world.doctor_a)
+    mine = client.get(URL).json()
+    assert (mine["totals"]["appointments"], mine["totals"]["procedures"]) == (1, 1)
+    assert [row["doctor"] for row in mine["doctors"]] == [str(world.doctor_a.pk)]
+    # Patient A is registered to doctor_a; A2 to doctor_a2.
+    assert mine["totals"]["new_patients"] == 0
+    assert mine["totals"]["plans_accepted"] == 1
+
+    # Asking for a colleague changes nothing.
+    other = client.get(f"{URL}&doctor={world.doctor_a2.pk}").json()
+    assert other["totals"] == mine["totals"]
+
+
+def test_owner_filters_statistics_by_doctor(world, october):
+    owner = owner_of(world)
+    one = owner.get(f"{URL}&doctor={world.doctor_a2.pk}").json()
+    assert (one["totals"]["appointments"], one["totals"]["no_shows"], one["totals"]["procedures"]) == (2, 1, 1)
+    assert one["totals"]["new_patients"] == 1
+    assert [row["doctor"] for row in one["doctors"]] == [str(world.doctor_a2.pk)]
+
+    for doctor in (world.admin_a.pk, world.other_admin.pk, "not-a-uuid"):
+        response = owner.get(f"{URL}&doctor={doctor}")
+        assert response.status_code == 400
+        assert response.json()["errors"] == {"doctor": "does_not_exist"}
 
 
 @pytest.mark.parametrize(

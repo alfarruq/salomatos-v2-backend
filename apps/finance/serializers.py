@@ -202,12 +202,19 @@ class PayrollRowSerializer(serializers.Serializer):
     opening = serializers.DecimalField(max_digits=14, decimal_places=2)
     paid = serializers.DecimalField(max_digits=14, decimal_places=2)
     balance = serializers.DecimalField(max_digits=14, decimal_places=2)
+    pending = serializers.DecimalField(
+        max_digits=14, decimal_places=2, help_text="Work done by the month's end that patients still owe for."
+    )
+    pending_share = serializers.DecimalField(
+        max_digits=14, decimal_places=2, help_text="The doctor's share of `pending` once it is paid."
+    )
 
 
 class PayrollTotalsSerializer(serializers.Serializer):
     accrued = serializers.DecimalField(max_digits=14, decimal_places=2)
     paid = serializers.DecimalField(max_digits=14, decimal_places=2)
     balance = serializers.DecimalField(max_digits=14, decimal_places=2)
+    pending_share = serializers.DecimalField(max_digits=14, decimal_places=2)
 
 
 class PayrollSerializer(serializers.Serializer):
@@ -370,3 +377,22 @@ class StatisticsOverviewSerializer(RangeFields):
     services = ServiceCountSerializer(many=True)
     busy_slots = BusySlotSerializer(many=True)
     teeth = ToothCountSerializer(many=True)
+
+
+class EarningsLineSerializer(serializers.Serializer):
+    procedure = serializers.UUIDField()
+    performed_at = serializers.DateTimeField()
+    patient = serializers.UUIDField()
+    patient_name = serializers.CharField(allow_null=True, help_text="Null for a patient the doctor may no longer see.")
+    service_name = serializers.CharField()
+    tooth = serializers.IntegerField(allow_null=True)
+    total = serializers.DecimalField(max_digits=14, decimal_places=2)
+    paid = serializers.DecimalField(max_digits=14, decimal_places=2)
+    unpaid = serializers.DecimalField(max_digits=14, decimal_places=2)
+    status = serializers.ChoiceField(choices=["completed", "in_progress"])
+
+
+class EarningsSerializer(serializers.Serializer):
+    month = MonthField()
+    summary = PayrollRowSerializer()
+    lines = EarningsLineSerializer(many=True)

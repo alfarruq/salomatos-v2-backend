@@ -57,6 +57,11 @@ apps/finance     Expense, RecurringExpense, Compensation (doctor pay terms), pay
   payroll need `payroll:*`; admins never receive those rows. A doctor's share of
   collected money is attributed by applying each patient's payments to their
   oldest unpaid procedure first (`apps/finance/allocation.py`).
+- **Management is the owner's.** Staff, the price list and specialties need `*:manage`
+  rights admins do not have. Pay terms can be set when a doctor is added; later changes
+  are new `Compensation` rows from a month. A doctor reads only their own month
+  (`/me/earnings/`, `payroll:view_own`) and own statistics; the doctor is always the
+  caller, never a parameter.
 
 Patients do not log in. They will reach their data only through the Telegram bot
 (planned), which must authenticate with a one-time link code, never by phone number.

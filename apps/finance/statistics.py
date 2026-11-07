@@ -20,54 +20,67 @@ Status = Appointment.Status
 TOP_SERVICES = 10
 
 
-def _appointments(clinic_ids, start, end):
-    return Appointment.objects.filter(clinic_id__in=clinic_ids, start_at__gte=start, start_at__lt=end)
+def _mine(queryset, doctor):
+    return queryset if doctor is None else queryset.filter(doctor=doctor)
 
 
-def _procedures(clinic_ids, start, end):
-    return Procedure.objects.filter(
-        clinic_id__in=clinic_ids, voided_at__isnull=True, performed_at__gte=start, performed_at__lt=end
+def _appointments(clinic_ids, start, end, doctor=None):
+    return _mine(Appointment.objects.filter(clinic_id__in=clinic_ids, start_at__gte=start, start_at__lt=end), doctor)
+
+
+def _procedures(clinic_ids, start, end, doctor=None):
+    return _mine(
+        Procedure.objects.filter(
+            clinic_id__in=clinic_ids, voided_at__isnull=True, performed_at__gte=start, performed_at__lt=end
+        ),
+        doctor,
     )
 
 
-def _totals(clinic_ids, period: DateRange, zone) -> dict:
+def _totals(clinic_ids, period: DateRange, zone, doctor=None) -> dict:
     start, end = window(period, zone)
-    appointments = _appointments(clinic_ids, start, end).aggregate(
+    appointments = _appointments(clinic_ids, start, end, doctor).aggregate(
         # A cancelled visit never held the chair, so it is not part of the workload.
         total=Count("id", filter=~Q(status=Status.CANCELLED)),
         completed=Count("id", filter=Q(status=Status.COMPLETED)),
         no_show=Count("id", filter=Q(status=Status.NO_SHOW)),
         cancelled=Count("id", filter=Q(status=Status.CANCELLED)),
     )
-    procedures = _procedures(clinic_ids, start, end)
+    procedures = _procedures(clinic_ids, start, end, doctor)
 
     # Seen = treated, or a visit that was completed; either proves the patient came.
     seen = set(procedures.values_list("patient_id", flat=True))
     seen |= set(
-        _appointments(clinic_ids, start, end).filter(status=Status.COMPLETED).values_list("patient_id", flat=True)
+        _appointments(clinic_ids, start, end, doctor)
+        .filter(status=Status.COMPLETED)
+        .values_list("patient_id", flat=True)
     )
     returning = Patient.objects.filter(pk__in=seen, created_at__lt=start).count()
+    new_patients = Patient.objects.filter(clinic_id__in=clinic_ids, created_at__gte=start, created_at__lt=end)
+    if doctor is not None:
+        # A doctor's new patients are the ones registered to them.
+        new_patients = new_patients.filter(primary_doctor=doctor)
 
     return {
         "appointments": appointments["total"],
         "appointments_completed": appointments["completed"],
         "no_shows": appointments["no_show"],
         "cancellations": appointments["cancelled"],
-        "new_patients": Patient.objects.filter(
-            clinic_id__in=clinic_ids, created_at__gte=start, created_at__lt=end
-        ).count(),
+        "new_patients": new_patients.count(),
         "returning_patients": returning,
         "procedures": procedures.count(),
-        "plans_accepted": TreatmentPlan.objects.filter(
-            clinic_id__in=clinic_ids, accepted_at__gte=start, accepted_at__lt=end
+        "plans_accepted": _mine(
+            TreatmentPlan.objects.filter(clinic_id__in=clinic_ids, accepted_at__gte=start, accepted_at__lt=end),
+            doctor,
         ).count(),
     }
 
 
-def statistics_overview(clinic_ids, period: DateRange, zone) -> dict:
+def statistics_overview(clinic_ids, period: DateRange, zone, *, doctor=None) -> dict:
+    """`doctor` narrows every figure to one doctor's work and patients."""
     start, end = window(period, zone)
-    appointments = _appointments(clinic_ids, start, end).exclude(status=Status.CANCELLED)
-    procedures = _procedures(clinic_ids, start, end)
+    appointments = _appointments(clinic_ids, start, end, doctor).exclude(status=Status.CANCELLED)
+    procedures = _procedures(clinic_ids, start, end, doctor)
 
     visits = defaultdict(lambda: {"total": 0, "completed": 0})
     for day, status, count in (
@@ -99,8 +112,8 @@ def statistics_overview(clinic_ids, period: DateRange, zone) -> dict:
         "from": period.start,
         "to": period.end,
         "bucket": period.bucket,
-        "totals": _totals(clinic_ids, period, zone),
-        "previous_totals": _totals(clinic_ids, period.previous(), zone),
+        "totals": _totals(clinic_ids, period, zone, doctor),
+        "previous_totals": _totals(clinic_ids, period.previous(), zone, doctor),
         "appointments_series": [{"start": day, **visits[day]} for day in period.buckets()],
         "procedures_series": [{"start": day, "count": treated[day]} for day in period.buckets()],
         "doctors": sorted(
