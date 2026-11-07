@@ -43,7 +43,7 @@ class SpecialtyViewSet(ClinicScopedModelViewSet):
 
 
 class StaffViewSet(ClinicScopedModelViewSet):
-    queryset = Membership.objects.select_related("user", "specialty")
+    queryset = Membership.objects.select_related("user", "specialty", "clinic").prefetch_related("compensations")
     serializer_class = StaffSerializer
     audit_reads = False
     filterset_fields = ["role", "is_active", "specialty"]
