@@ -34,6 +34,8 @@ _DOCTOR = {
     # A doctor's own figures only; views narrow to the caller without `*:view_all`.
     "statistics:view",
     "payroll:view_own",
+    # Dictate a form draft; the form's own `*:manage` permission is checked too.
+    "voice:use",
 }
 
 # The front desk of one branch. Staff, the price list and the clinic profile are

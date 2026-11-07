@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "apps.billing",
     "apps.finance",
     "apps.bot",
+    "apps.voice",
 ]
 
 MIDDLEWARE = [
@@ -190,3 +191,10 @@ LOGGING = {
     "handlers": {"console": {"class": "logging.StreamHandler"}},
     "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "INFO")},
 }
+
+# Voice input: a dictation becomes a form draft. Off while the key is empty.
+# The dictated text goes to Anthropic's API; it is never stored or logged here.
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+VOICE_MODEL = os.getenv("VOICE_MODEL", "claude-haiku-5-5")
+# Drafts per clinic per calendar month: the cap behind the paid voice add-on.
+VOICE_MONTHLY_LIMIT = int(os.getenv("VOICE_MONTHLY_LIMIT", "1500"))

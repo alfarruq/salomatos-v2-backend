@@ -23,6 +23,7 @@ from apps.imaging.views import AttachmentViewSet
 from apps.patients.views import PatientViewSet
 from apps.scheduling.views import AppointmentViewSet, ChairViewSet
 from apps.tenancy.views import CurrentClinicView, SpecialtyViewSet, StaffViewSet
+from apps.voice.views import VoiceViewSet
 
 admin.site.site_header = "SalomatOS Admin"
 
@@ -46,6 +47,7 @@ router.register("expenses", ExpenseViewSet, basename="expense")
 router.register("recurring-expenses", RecurringExpenseViewSet, basename="recurring-expense")
 router.register("compensations", CompensationViewSet, basename="compensation")
 router.register("audit-logs", AuditLogViewSet, basename="audit-log")
+router.register("voice", VoiceViewSet, basename="voice")
 
 api_v1 = [
     path("auth/login/", accounts.LoginView.as_view(), name="login"),
