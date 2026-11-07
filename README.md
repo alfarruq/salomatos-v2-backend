@@ -17,6 +17,23 @@ python manage.py runserver
 
 API schema: `/api/schema/` (OpenAPI 3). Swagger UI at `/api/docs/` when `DEBUG=1`.
 
+## Telegram bot
+
+Patients, doctors and owners use the bot with a login and password the system
+issues for them (shown on the patient card, the doctors list and under
+Boshqaruv -> Telegram bot). The bot uses long polling, so it needs internet
+access but no public URL.
+
+```bash
+# .env: TELEGRAM_BOT_TOKEN=<token from @BotFather>
+python manage.py issue_bot_logins   # once, for rows created before the bot existed
+python manage.py run_bot            # keep running next to runserver
+```
+
+- Patient: prescriptions (with PDF), gallery, treatment history, doctor.
+- Doctor: today's new patients, procedures and waiting appointments; a 07:00 message.
+- Owner: today's report on demand and every day at 20:00.
+
 ## API at a glance
 
 All tenant endpoints need `Authorization: Bearer <access>` and `X-Clinic-Id: <clinic uuid>`.

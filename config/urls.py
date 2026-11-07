@@ -7,6 +7,7 @@ from rest_framework.routers import DefaultRouter
 from apps.accounts import views as accounts
 from apps.audit.views import AuditLogViewSet
 from apps.billing.views import PatientBalanceViewSet, PaymentViewSet
+from apps.bot.views import MyBotAccessViewSet
 from apps.catalog.views import ServiceCategoryViewSet, ServiceViewSet
 from apps.clinical.views import PrescriptionViewSet
 from apps.dental.views import ProcedureViewSet, ToothRecordViewSet, TreatmentPlanViewSet
@@ -58,6 +59,7 @@ api_v1 = [
     path("payroll/pay/", PayrollViewSet.as_view({"post": "pay"}), name="payroll-pay"),
     path("reports/finance/", ReportViewSet.as_view({"get": "finance"}), name="report-finance"),
     path("me/earnings/", EarningsViewSet.as_view({"get": "earnings"}), name="my-earnings"),
+    path("me/bot-access/", MyBotAccessViewSet.as_view({"get": "bot_access"}), name="my-bot-access"),
     path("reports/statistics/", ReportViewSet.as_view({"get": "statistics"}), name="report-statistics"),
     *router.urls,
 ]
