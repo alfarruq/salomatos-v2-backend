@@ -1,10 +1,13 @@
+from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.response import Response
 
 from apps.audit.models import AuditLog
 from apps.audit.services import record
+from apps.bot.serializers import BotAccessSerializer
+from apps.bot.views import respond_with_access
 from apps.tenancy.models import Membership, Specialty
 from apps.tenancy.permissions import permissions_for
 from apps.tenancy.serializers import ClinicSerializer, SpecialtySerializer, StaffSerializer
@@ -54,6 +57,8 @@ class StaffViewSet(ClinicScopedModelViewSet):
         "partial_update": "staff:manage",
         "destroy": "staff:manage",
         "reactivate": "staff:manage",
+        "bot_access": "staff:manage",
+        "reset_bot_access": "staff:manage",
     }
 
     def _guard_owner(self, membership):
@@ -85,3 +90,30 @@ class StaffViewSet(ClinicScopedModelViewSet):
         membership.save(update_fields=["is_active", "updated_at"])
         record(request, AuditLog.Action.RESTORE, membership)
         return Response(self.get_serializer(membership).data)
+
+    def _bot_account(self, membership):
+        from apps.bot.credentials import issue_for_user
+        from apps.bot.signals import BOT_ROLES
+
+        # Admins have no bot login; asking for one is the same as asking for nothing.
+        if membership.role not in BOT_ROLES or not membership.is_active:
+            raise NotFound()
+        return issue_for_user(membership.user)
+
+    @extend_schema(responses={200: BotAccessSerializer})
+    @action(detail=True, methods=["get"], url_path="bot-access")
+    def bot_access(self, request, pk=None):
+        membership = self.get_object()
+        self._guard_owner(membership)
+        return respond_with_access(request, self._bot_account(membership), clinic=membership.clinic)
+
+    @extend_schema(request=None, responses={200: BotAccessSerializer})
+    @action(detail=True, methods=["post"], url_path="bot-access/reset")
+    def reset_bot_access(self, request, pk=None):
+        from apps.bot.credentials import reset
+
+        membership = self.get_object()
+        self._guard_owner(membership)
+        account = reset(self._bot_account(membership))
+        record(request, AuditLog.Action.UPDATE, account, clinic=membership.clinic)
+        return respond_with_access(request, account, clinic=membership.clinic)

@@ -4,10 +4,14 @@ from django_filters import rest_framework as filters
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.audit.models import AuditLog
 from apps.audit.services import record
+from apps.bot.credentials import issue_for_patient, reset
+from apps.bot.serializers import BotAccessSerializer
+from apps.bot.views import respond_with_access
 from apps.patients.access import patient_filter
 from apps.patients.models import MedicalHistory, Patient
 from apps.patients.serializers import MedicalHistorySerializer, PatientSearchSerializer, PatientSerializer
@@ -47,11 +51,37 @@ class PatientViewSet(
         "restore": "patient:archive",
         "medical_history": "patient:view",
         "update_medical_history": "patient:manage",
+        "bot_access": "patient:bot_access",
+        "reset_bot_access": "patient:bot_access",
     }
 
     def scope_queryset(self, queryset):
         # A doctor sees patients assigned to them or booked with them.
         return queryset.filter(patient_filter(self.request, prefix="")).distinct()
+
+    def _guard_primary_doctor(self, serializer):
+        """A doctor registers patients to themselves and cannot hand one to a colleague.
+
+        Otherwise a patient the doctor just added could vanish from their own
+        list, and a doctor could move a patient between colleagues' lists.
+        """
+        if self.has_perm("patient:view_all"):
+            return
+        me = self.request.membership
+        data = serializer.validated_data
+        current = serializer.instance.primary_doctor if serializer.instance else None
+        if serializer.instance is None and data.get("primary_doctor") is None:
+            data["primary_doctor"] = me
+        elif "primary_doctor" in data and data["primary_doctor"] not in (me, current):
+            raise PermissionDenied("A doctor registers patients to themselves.")
+
+    def perform_create(self, serializer):
+        self._guard_primary_doctor(serializer)
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        self._guard_primary_doctor(serializer)
+        super().perform_update(serializer)
 
     def filter_queryset(self, queryset):
         queryset = super().filter_queryset(queryset)
@@ -107,6 +137,20 @@ class PatientViewSet(
         serializer.save()
         record(request, AuditLog.Action.UPDATE, history)
         return Response(serializer.data)
+
+    @extend_schema(responses={200: BotAccessSerializer})
+    @action(detail=True, methods=["get"], url_path="bot-access")
+    def bot_access(self, request, pk=None):
+        patient = self.get_object()
+        return respond_with_access(request, issue_for_patient(patient), clinic=patient.clinic)
+
+    @extend_schema(request=None, responses={200: BotAccessSerializer})
+    @action(detail=True, methods=["post"], url_path="bot-access/reset")
+    def reset_bot_access(self, request, pk=None):
+        patient = self.get_object()
+        account = reset(issue_for_patient(patient))
+        record(request, AuditLog.Action.UPDATE, account, clinic=patient.clinic)
+        return respond_with_access(request, account, clinic=patient.clinic)
 
     @staticmethod
     def _history(patient: Patient) -> MedicalHistory:

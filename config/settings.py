@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "apps.dental",
     "apps.billing",
     "apps.finance",
+    "apps.bot",
 ]
 
 MIDDLEWARE = [
@@ -163,6 +164,12 @@ CELERY_ACCEPT_CONTENT = ["application/json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+
+# Telegram bot. The token comes from @BotFather; without it `run_bot` refuses to start.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+# Fernet key for bot passwords (see apps/bot/crypto.py). Generate one with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+BOT_CREDENTIAL_KEY = os.getenv("BOT_CREDENTIAL_KEY", "")
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

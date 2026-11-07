@@ -70,3 +70,10 @@ def ids(response) -> set[str]:
     body = response.json()
     rows = body["results"] if isinstance(body, dict) and "results" in body else body
     return {row["id"] for row in rows}
+
+
+@pytest.fixture(autouse=True)
+def fast_password_hashing(settings):
+    # Every patient and doctor now gets a hashed bot password; the production
+    # hasher's work factor would make the suite crawl without proving anything.
+    settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]

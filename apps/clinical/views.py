@@ -1,5 +1,4 @@
 from django.http import HttpResponse
-from django.template.loader import render_to_string
 from django_filters import rest_framework as filters
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
@@ -9,6 +8,7 @@ from rest_framework.exceptions import PermissionDenied
 from apps.audit.models import AuditLog
 from apps.audit.services import record
 from apps.clinical.models import Prescription
+from apps.clinical.pdf import prescription_pdf
 from apps.clinical.serializers import PrescriptionSerializer
 from apps.patients.access import ensure_patient_visible
 from apps.tenancy.models import Membership
@@ -58,15 +58,9 @@ class PrescriptionViewSet(ClinicScopedModelViewSet):
     @extend_schema(responses={(200, "application/pdf"): OpenApiTypes.BINARY})
     @action(detail=True, methods=["get"])
     def pdf(self, request, pk=None):
-        from weasyprint import HTML
-
         prescription = self.get_object()
-        html = render_to_string(
-            "prescription_pdf.html",
-            {"prescription": prescription, "clinic": prescription.clinic, "items": prescription.items.all()},
-        )
         record(request, AuditLog.Action.EXPORT, prescription)
-        response = HttpResponse(HTML(string=html).write_pdf(), content_type="application/pdf")
+        response = HttpResponse(prescription_pdf(prescription), content_type="application/pdf")
         # The file name carries the id only, never the patient's name.
         response["Content-Disposition"] = f'inline; filename="prescription-{prescription.pk}.pdf"'
         response["Cache-Control"] = "no-store"

@@ -29,6 +29,8 @@ _DOCTOR = {
     "procedure:view",
     "procedure:manage",
     "payment:view",
+    # Read back a patient's bot login; a doctor only for patients they can see.
+    "patient:bot_access",
     # A doctor's own figures only; views narrow to the caller without `*:view_all`.
     "statistics:view",
     "payroll:view_own",

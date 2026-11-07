@@ -1,4 +1,6 @@
 amqp==5.3.1
+anyio==4.16.0
+APScheduler==3.11.3
 asgiref==3.12.1
 attrs==26.1.0
 billiard==4.2.4
@@ -11,6 +13,7 @@ click-didyoumean==0.3.1
 click-plugins==1.1.1.2
 click-repl==0.3.0
 click==8.4.2
+cryptography==46.0.3
 cssselect2==0.9.0
 django-cors-headers==4.9.0
 django-filter==26.1
@@ -19,6 +22,9 @@ djangorestframework==3.17.1
 djangorestframework_simplejwt==5.5.1
 drf-spectacular==0.30.0
 fonttools==4.63.0
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
 idna==3.18
 inflection==0.5.1
 jsonschema-specifications==2025.9.1
@@ -34,6 +40,7 @@ PyJWT==2.13.0
 pyphen==0.18.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
+python-telegram-bot[job-queue]==22.5
 pytz==2026.3.post1
 PyYAML==6.0.3
 redis==8.1.0
