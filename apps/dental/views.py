@@ -155,6 +155,12 @@ class TreatmentPlanViewSet(ClinicScopedModelViewSet):
         self.assign_doctor(serializer)
         super().perform_create(serializer)
 
+    def perform_update(self, serializer):
+        doctor = serializer.validated_data.get("doctor")
+        if doctor is not None and not self.has_perm("patient:view_all") and doctor != self.request.membership:
+            raise PermissionDenied("You can only act as yourself.")
+        super().perform_update(serializer)
+
     def perform_destroy(self, instance):
         if instance.status != TreatmentPlan.Status.DRAFT:
             raise ValidationError("Only a draft plan can be deleted; cancel it instead.", code="locked")

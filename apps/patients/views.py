@@ -8,7 +8,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.audit.models import AuditLog
-from apps.audit.services import record
+from apps.audit.services import record, record_many
 from apps.bot.credentials import issue_for_patient, reset
 from apps.bot.serializers import BotAccessSerializer
 from apps.bot.views import respond_with_access
@@ -83,6 +83,11 @@ class PatientViewSet(
         self._guard_primary_doctor(serializer)
         super().perform_update(serializer)
 
+    def list(self, request, *args, **kwargs):
+        page = self.paginate_queryset(self.filter_queryset(self.get_queryset()))
+        record_many(request, AuditLog.Action.VIEW, page)
+        return self.get_paginated_response(self.get_serializer(page, many=True).data)
+
     def filter_queryset(self, queryset):
         queryset = super().filter_queryset(queryset)
         if self.action == "list" and "archived" not in self.request.query_params:
@@ -99,6 +104,7 @@ class PatientViewSet(
         if not params.validated_data["include_archived"]:
             queryset = queryset.filter(archived_at__isnull=True)
         page = self.paginate_queryset(queryset.order_by("full_name"))
+        record_many(request, AuditLog.Action.VIEW, page)
         return self.get_paginated_response(self.get_serializer(page, many=True).data)
 
     @extend_schema(request=None, responses={200: PatientSerializer})

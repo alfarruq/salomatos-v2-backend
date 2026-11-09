@@ -4,6 +4,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.response import Response
 
+from apps.accounts.sessions import revoke_all_sessions
 from apps.audit.models import AuditLog
 from apps.audit.services import record
 from apps.bot.serializers import BotAccessSerializer
@@ -69,7 +70,24 @@ class StaffViewSet(ClinicScopedModelViewSet):
 
     def perform_update(self, serializer):
         self._guard_owner(serializer.instance)
+        data = serializer.validated_data
+        changes_login = bool(data.get("password")) or "username" in data.get("user", {})
+        if changes_login:
+            self._guard_shared_login(serializer.instance)
         super().perform_update(serializer)
+        if data.get("password"):
+            revoke_all_sessions(serializer.instance.user)
+
+    def _guard_shared_login(self, membership):
+        # One login can belong to clinics of several organizations. Its password
+        # opens all of them, so only an organization holding every one may set it.
+        organization_id = self.request.clinic.organization_id
+        if (
+            Membership.objects.filter(user_id=membership.user_id)
+            .exclude(clinic__organization_id=organization_id)
+            .exists()
+        ):
+            raise PermissionDenied("This login is also used by another organization.")
 
     def destroy(self, request, *args, **kwargs):
         # Staff are deactivated, not deleted: their name stays on past visits.

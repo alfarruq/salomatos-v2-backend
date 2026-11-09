@@ -1,7 +1,7 @@
 from django.conf import settings
 from rest_framework import serializers
 
-from apps.imaging.models import Attachment
+from apps.imaging.models import Attachment, content_type_for
 from apps.patients.models import Patient
 from apps.tenancy.fields import ClinicRelatedField
 
@@ -36,7 +36,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         upload = validated_data["file"]
-        validated_data["content_type"] = getattr(upload, "content_type", "") or ""
+        validated_data["content_type"] = content_type_for(upload.name)
         validated_data["size_bytes"] = upload.size
         return super().create(validated_data)
 

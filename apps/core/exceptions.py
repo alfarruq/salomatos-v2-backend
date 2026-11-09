@@ -1,4 +1,6 @@
 from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import ProtectedError
 from django.http import Http404, JsonResponse
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status
@@ -83,6 +85,29 @@ def drf_exception_handler(exception, context):
                 "exception_class": "NotFound",
             },
             status=status.HTTP_404_NOT_FOUND,
+        )
+    if isinstance(exception, ProtectedError):
+        # A price-list row or similar that history points at. The message names
+        # no rows: their `__str__` is an id, but the client needs only the code.
+        return Response(
+            {
+                "message": "This record is in use and cannot be deleted.",
+                "message_key": "in_use",
+                "errors": {},
+                "exception_class": "ProtectedError",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if isinstance(exception, DjangoValidationError):
+        # Usually a malformed id in a query parameter reaching the ORM.
+        return Response(
+            {
+                "message": "Validation error",
+                "message_key": "invalid",
+                "errors": {},
+                "exception_class": "ValidationError",
+            },
+            status=status.HTTP_400_BAD_REQUEST,
         )
     if response is not None:
         formatted_exception = APIExceptionFormatter(exception)

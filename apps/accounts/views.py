@@ -2,6 +2,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -14,6 +15,8 @@ from apps.accounts.serializers import (
     RefreshSerializer,
     TokenResultSerializer,
 )
+from apps.accounts.sessions import revoke_all_sessions
+from apps.accounts.throttles import LoginUsernameThrottle
 from apps.audit.models import AuditLog
 from apps.audit.services import record
 from apps.core.exceptions import BaseUnauthorizedException
@@ -28,6 +31,7 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
     throttle_scope = "login"
+    throttle_classes = [ScopedRateThrottle, LoginUsernameThrottle]
 
     @extend_schema(request=LoginSerializer, responses={200: TokenResultSerializer}, tags=["Auth"])
     def post(self, request):
@@ -102,4 +106,5 @@ class ChangePasswordView(APIView):
         serializer.is_valid(raise_exception=True)
         request.user.set_password(serializer.validated_data["new_password"])
         request.user.save(update_fields=["password", "updated_at"])
+        revoke_all_sessions(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)

@@ -69,10 +69,14 @@ api_v1 = [
 # No media/ route on purpose: uploaded files hold PHI and are only reachable
 # through the authenticated download endpoints.
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    # Configurable so a deployment can move the operator login off the guessable path.
+    path(settings.ADMIN_URL, admin.site.urls),
     path("api/v1/", include(api_v1)),
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
 ]
 
+# The schema maps every endpoint and field; it is a development aid, not a public page.
 if settings.DEBUG:
-    urlpatterns += [path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs")]
+    urlpatterns += [
+        path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+        path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
+    ]
