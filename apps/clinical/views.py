@@ -3,7 +3,7 @@ from django_filters import rest_framework as filters
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.audit.models import AuditLog
 from apps.audit.services import record
@@ -54,6 +54,17 @@ class PrescriptionViewSet(ClinicScopedModelViewSet):
         elif not self.has_perm("patient:view_all") and doctor != me:
             raise PermissionDenied("You can only prescribe as yourself.")
         super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        # A prescription belongs to the patient it was written for; moving it
+        # would also skip the visibility check create makes.
+        patient = serializer.validated_data.get("patient")
+        if patient is not None and patient != serializer.instance.patient:
+            raise ValidationError({"patient": "immutable"})
+        doctor = serializer.validated_data.get("doctor")
+        if doctor is not None and not self.has_perm("patient:view_all") and doctor != self.request.membership:
+            raise PermissionDenied("You can only prescribe as yourself.")
+        super().perform_update(serializer)
 
     @extend_schema(responses={(200, "application/pdf"): OpenApiTypes.BINARY})
     @action(detail=True, methods=["get"])
