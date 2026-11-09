@@ -39,13 +39,14 @@ class AppointmentViewSet(ClinicScopedModelViewSet):
     queryset = Appointment.objects.select_related("clinic", "patient", "doctor__user", "chair", "service")
     serializer_class = AppointmentSerializer
     filterset_class = AppointmentFilter
+    # No DELETE: a booking is cancelled (status), so no-shows and cancellations stay countable.
+    http_method_names = ["get", "post", "patch", "head", "options"]
     organization_actions = frozenset({"list", "retrieve"})
     required_permissions = {
         "list": "appointment:view",
         "retrieve": "appointment:view",
         "create": "appointment:manage",
         "partial_update": "appointment:manage",
-        "destroy": "appointment:manage",
     }
 
     def scope_queryset(self, queryset):

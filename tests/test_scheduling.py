@@ -65,3 +65,15 @@ def test_end_defaults_from_service_duration(world):
     assert response.status_code == 201
     end = datetime.fromisoformat(response.json()["end_at"])
     assert abs(end - (start + timedelta(minutes=45))) < timedelta(seconds=1)
+
+
+def test_a_booking_is_cancelled_not_deleted(world):
+    client = world.client(world.admin_a)
+    start = timezone.now() + timedelta(days=1)
+    appointment = book(client, world, start).json()["id"]
+    url = f"/api/v1/appointments/{appointment}/"
+    assert client.delete(url).status_code in (403, 405)
+    assert client.patch(url, {"status": "cancelled"}, format="json").status_code == 200
+    # The cancelled booking stays on record and frees its slot.
+    assert client.get(url).json()["status"] == "cancelled"
+    assert book(client, world, start).status_code == 201
