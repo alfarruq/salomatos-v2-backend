@@ -1,3 +1,5 @@
+import re
+
 from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
@@ -100,7 +102,16 @@ class PatientViewSet(
         params = PatientSearchSerializer(data=request.data)
         params.is_valid(raise_exception=True)
         text = params.validated_data["query"].strip()
-        queryset = self.get_queryset().filter(Q(full_name__icontains=text) | Q(phone_number__icontains=text))
+        # Every word must match, in any order: "Vali Aliyev" finds "Aliyev Vali".
+        by_name = Q()
+        for word in text.split():
+            by_name &= Q(full_name__icontains=word)
+        matches = by_name | Q(phone_number__icontains=text)
+        # Phones are stored as +998XXXXXXXXX; staff type "91 108-71" or "(91) 108".
+        digits = re.sub(r"\D", "", text)
+        if len(digits) >= 3:
+            matches |= Q(phone_number__icontains=digits)
+        queryset = self.get_queryset().filter(matches)
         if not params.validated_data["include_archived"]:
             queryset = queryset.filter(archived_at__isnull=True)
         page = self.paginate_queryset(queryset.order_by("full_name"))

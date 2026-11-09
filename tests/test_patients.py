@@ -50,3 +50,15 @@ def test_created_patient_belongs_to_header_clinic(world):
     )
     assert response.status_code == 201
     assert response.json()["clinic"] == str(world.branch_a.pk)
+
+
+def test_search_matches_words_in_any_order(world):
+    api = world.client(world.admin_a)
+    response = api.post("/api/v1/patients/search/", {"query": "A2 Patient"}, format="json")
+    assert {row["id"] for row in response.json()["results"]} == {str(world.patient_a2.pk)}
+
+
+def test_search_matches_a_phone_typed_with_spaces(world):
+    api = world.client(world.admin_a)
+    response = api.post("/api/v1/patients/search/", {"query": "90 000 00 02"}, format="json")
+    assert {row["id"] for row in response.json()["results"]} == {str(world.patient_a2.pk)}
