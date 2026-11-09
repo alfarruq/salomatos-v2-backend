@@ -5,12 +5,14 @@ from datetime import timedelta
 import pytest
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db.models import ProtectedError
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.throttles import LoginUsernameThrottle
 from apps.audit.models import AuditLog
 from apps.catalog.models import Service
+from apps.core.exceptions import drf_exception_handler
 from apps.dental.models import Procedure
 from apps.tenancy.models import Membership
 
@@ -137,7 +139,7 @@ def test_schema_is_not_public_outside_debug(world):
     assert APIClient().get("/api/schema/").status_code == 404
 
 
-def test_deleting_a_used_service_is_a_clear_400(world):
+def test_deleting_a_used_service_hides_it_instead(world):
     service = Service.objects.create(clinic=world.branch_a, name="Filling", price=100)
     Procedure.objects.create(
         clinic=world.branch_a,
@@ -148,8 +150,16 @@ def test_deleting_a_used_service_is_a_clear_400(world):
         performed_at=timezone.now(),
     )
     r = world.client(owner_of(world, world.branch_a)).delete(f"/api/v1/services/{service.pk}/")
-    assert r.status_code == 400
-    assert r.json()["message_key"] == "in_use"
+    assert r.status_code == 204
+    service.refresh_from_db()
+    assert service.is_active is False
+
+
+def test_protected_delete_is_a_clear_400():
+    # Any other PROTECT reference still answers 400, never 500.
+    response = drf_exception_handler(ProtectedError("x", set()), {})
+    assert response.status_code == 400
+    assert response.data["message_key"] == "in_use"
 
 
 def test_malformed_id_in_a_query_is_a_400(world):
