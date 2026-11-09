@@ -29,6 +29,13 @@ class PrescriptionSerializer(serializers.ModelSerializer):
     def validate_items(self, value):
         if not value:
             raise serializers.ValidationError("Add at least one medicine.", code="required")
+        if self.partial:
+            # PATCH makes the nested fields optional too, and a missing
+            # times_per_day then reached the database as NULL (500). The item
+            # list is replaced whole, so each item must be whole as well.
+            whole = PrescriptionItemSerializer(data=self.initial_data.get("items"), many=True)
+            whole.is_valid(raise_exception=True)
+            return whole.validated_data
         return value
 
     @transaction.atomic
