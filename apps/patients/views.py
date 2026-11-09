@@ -11,6 +11,7 @@ from rest_framework.response import Response
 
 from apps.audit.models import AuditLog
 from apps.audit.services import record, record_many
+from apps.billing.balance import annotate_balance
 from apps.bot.credentials import issue_for_patient, reset
 from apps.bot.serializers import BotAccessSerializer
 from apps.bot.views import respond_with_access
@@ -56,6 +57,15 @@ class PatientViewSet(
         "bot_access": "patient:bot_access",
         "reset_bot_access": "patient:bot_access",
     }
+
+    # The list shows each patient's debt so the desk sees it before booking.
+    BALANCE_ACTIONS = frozenset({"list", "search", "retrieve"})
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.action in self.BALANCE_ACTIONS and self.has_perm("payment:view"):
+            queryset = annotate_balance(queryset)
+        return queryset
 
     def scope_queryset(self, queryset):
         # A doctor sees patients assigned to them or booked with them.

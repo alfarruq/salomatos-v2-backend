@@ -17,6 +17,8 @@ class PatientSerializer(serializers.ModelSerializer):
     clinic_name = serializers.CharField(source="clinic.name", read_only=True)
     primary_doctor = doctor_field(required=False, allow_null=True)
     primary_doctor_name = serializers.CharField(source="primary_doctor.user.full_name", read_only=True, default=None)
+    # Charged minus paid; null when the caller may not see money or the row was not annotated.
+    debt = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True, allow_null=True, default=None)
 
     class Meta:
         model = Patient
@@ -34,6 +36,7 @@ class PatientSerializer(serializers.ModelSerializer):
             "primary_doctor_name",
             "archived_at",
             "created_at",
+            "debt",
         ]
         read_only_fields = ["id", "clinic", "archived_at", "created_at"]
 

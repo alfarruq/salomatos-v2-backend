@@ -1,3 +1,11 @@
+from decimal import Decimal
+
+from django.utils import timezone
+
+from apps.billing.models import Payment
+from apps.catalog.models import Service
+from apps.dental.models import Procedure
+
 from .conftest import ids
 
 
@@ -62,3 +70,30 @@ def test_search_matches_a_phone_typed_with_spaces(world):
     api = world.client(world.admin_a)
     response = api.post("/api/v1/patients/search/", {"query": "90 000 00 02"}, format="json")
     assert {row["id"] for row in response.json()["results"]} == {str(world.patient_a2.pk)}
+
+
+def test_list_and_detail_carry_the_debt(world):
+    service = Service.objects.create(clinic=world.branch_a, name="Filling", price=300)
+    Procedure.objects.create(
+        clinic=world.branch_a,
+        patient=world.patient_a,
+        doctor=world.doctor_a,
+        service=service,
+        unit_price=300,
+        performed_at=timezone.now(),
+    )
+    Payment.objects.create(
+        clinic=world.branch_a,
+        patient=world.patient_a,
+        amount=Decimal("100"),
+        method=Payment.Method.CASH,
+        paid_at=timezone.now(),
+        received_by=world.admin_a,
+    )
+    api = world.client(world.admin_a)
+    rows = {row["id"]: row["debt"] for row in api.get("/api/v1/patients/").json()["results"]}
+    assert rows[str(world.patient_a.pk)] == "200.00"
+    assert rows[str(world.patient_a2.pk)] == "0.00"
+    assert api.get(f"/api/v1/patients/{world.patient_a.pk}/").json()["debt"] == "200.00"
+    found = api.post("/api/v1/patients/search/", {"query": "A Patient"}, format="json").json()["results"]
+    assert {row["debt"] for row in found} == {"200.00", "0.00"}
