@@ -269,3 +269,19 @@ def test_gallery_skips_files_too_big_for_telegram(world):
     reply = dialog.handle_text(CHAT, texts.BTN_GALLERY, {})
     assert reply.messages[0].file is None
     assert texts.FILE_TOO_BIG in reply.messages[0].text
+
+
+def test_gallery_reads_each_file_only_when_it_is_sent(world, settings, tmp_path):
+    from django.core.files.base import ContentFile
+
+    from apps.imaging.models import Attachment
+
+    settings.STORAGES = {**settings.STORAGES, "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"}}
+    settings.MEDIA_ROOT = tmp_path
+    attachment = Attachment(clinic=world.branch_a, patient=world.patient_a, kind=Attachment.Kind.PHOTO, size_bytes=3)
+    attachment.file.save("x.png", ContentFile(b"png"), save=True)
+    sign_in(CHAT, world.patient_a.bot_account)
+    reply = dialog.handle_text(CHAT, texts.BTN_GALLERY, {})
+    file = reply.messages[0].file
+    assert file.data is None
+    assert file.read() == b"png"
