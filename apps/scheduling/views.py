@@ -2,6 +2,7 @@ from django.db import transaction
 from django_filters import rest_framework as filters
 from rest_framework.exceptions import PermissionDenied
 
+from apps.patients.access import ensure_patient_visible
 from apps.scheduling.models import Appointment, Chair
 from apps.scheduling.serializers import AppointmentSerializer, ChairSerializer
 from apps.tenancy.viewsets import ClinicScopedModelViewSet
@@ -38,13 +39,14 @@ class AppointmentViewSet(ClinicScopedModelViewSet):
     queryset = Appointment.objects.select_related("clinic", "patient", "doctor__user", "chair", "service")
     serializer_class = AppointmentSerializer
     filterset_class = AppointmentFilter
+    # No DELETE: a booking is cancelled (status), so no-shows and cancellations stay countable.
+    http_method_names = ["get", "post", "patch", "head", "options"]
     organization_actions = frozenset({"list", "retrieve"})
     required_permissions = {
         "list": "appointment:view",
         "retrieve": "appointment:view",
         "create": "appointment:manage",
         "partial_update": "appointment:manage",
-        "destroy": "appointment:manage",
     }
 
     def scope_queryset(self, queryset):
@@ -58,12 +60,21 @@ class AppointmentViewSet(ClinicScopedModelViewSet):
         if doctor is not None and not self.has_perm("appointment:view_all") and doctor != self.request.membership:
             raise PermissionDenied("You can only book appointments for yourself.")
 
+    def _guard_patient(self, serializer):
+        # A booking makes the patient visible to its doctor (`patient_filter`),
+        # so booking a colleague's patient would open their whole record.
+        patient = serializer.validated_data.get("patient")
+        if patient is not None and (serializer.instance is None or patient != serializer.instance.patient):
+            ensure_patient_visible(self.request, patient)
+
     @transaction.atomic
     def perform_create(self, serializer):
         self._guard_doctor(serializer)
+        self._guard_patient(serializer)
         super().perform_create(serializer)
 
     @transaction.atomic
     def perform_update(self, serializer):
         self._guard_doctor(serializer)
+        self._guard_patient(serializer)
         super().perform_update(serializer)

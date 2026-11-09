@@ -7,7 +7,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 
 from apps.audit.models import AuditLog
 from apps.audit.services import record
-from apps.imaging.models import Attachment
+from apps.imaging.models import Attachment, content_type_for
 from apps.imaging.serializers import AttachmentSerializer, AttachmentUpdateSerializer
 from apps.patients.access import ensure_patient_visible, patient_filter
 from apps.tenancy.viewsets import ClinicScopedModelViewSet
@@ -59,7 +59,9 @@ class AttachmentViewSet(ClinicScopedModelViewSet):
         record(request, AuditLog.Action.EXPORT, attachment)
         response = FileResponse(
             attachment.file.open("rb"),
-            content_type=attachment.content_type or "application/octet-stream",
+            # From the stored file's extension, so rows saved before the type was
+            # decided server-side are served safely too.
+            content_type=content_type_for(attachment.file.name),
             filename=f"{attachment.kind}-{attachment.pk}{attachment.file.name[attachment.file.name.rfind('.') :]}",
         )
         response["Cache-Control"] = "private, no-store"

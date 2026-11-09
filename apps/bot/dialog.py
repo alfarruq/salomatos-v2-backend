@@ -6,6 +6,7 @@ name another patient, doctor or clinic.
 """
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,8 +25,22 @@ FILE_LIMIT = 50 * 1024 * 1024
 @dataclass
 class OutgoingFile:
     name: str
-    data: bytes
+    data: bytes | None = None
     is_photo: bool = False
+    # Read when this file is sent, not when the reply is built: a gallery of ten
+    # X-rays up to 50 MB each must not sit in memory all at once.
+    load: Callable[[], bytes] | None = None
+
+    def read(self) -> bytes:
+        return self.data if self.data is not None else self.load()
+
+
+def _reader(field_file) -> Callable[[], bytes]:
+    def read() -> bytes:
+        with field_file.open("rb") as handle:
+            return handle.read()
+
+    return read
 
 
 @dataclass
@@ -150,9 +165,9 @@ def _patient(account: BotAccount, text: str) -> Reply:
                 # Telegram refuses bot uploads over 50 MB; say so instead of reading it into memory.
                 messages.append(Out(text=f"{texts.attachment_caption(item)}: {texts.FILE_TOO_BIG}"))
                 continue
-            with item.file.open("rb") as handle:
-                data = handle.read()
-            file = OutgoingFile(name=f"{item.kind}-{item.pk}{suffix}", data=data, is_photo=suffix in PHOTO_SUFFIXES)
+            file = OutgoingFile(
+                name=f"{item.kind}-{item.pk}{suffix}", load=_reader(item.file), is_photo=suffix in PHOTO_SUFFIXES
+            )
             messages.append(Out(text=texts.attachment_caption(item), file=file))
         return Reply(messages=messages)
     if text == texts.BTN_PROCEDURES:

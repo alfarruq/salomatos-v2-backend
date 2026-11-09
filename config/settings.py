@@ -30,6 +30,8 @@ ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost")
 
 AUTH_USER_MODEL = "accounts.User"
 
+ADMIN_URL = os.getenv("ADMIN_URL", "admin/")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -141,8 +143,20 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "apps.core.exceptions.drf_exception_handler",
     "DEFAULT_THROTTLE_CLASSES": ("rest_framework.throttling.ScopedRateThrottle",),
-    "DEFAULT_THROTTLE_RATES": {"login": os.getenv("LOGIN_THROTTLE_RATE", "10/min")},
+    "DEFAULT_THROTTLE_RATES": {
+        "login": os.getenv("LOGIN_THROTTLE_RATE", "10/min"),
+        "login_username": os.getenv("LOGIN_USERNAME_THROTTLE_RATE", "20/hour"),
+    },
+    # How many proxies sit in front of Django. Without it DRF trusts the whole
+    # X-Forwarded-For header, which a client writes itself, so every guess
+    # could claim a new address. Behind one nginx set NUM_PROXIES=1.
+    "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "0")),
 }
+
+# Throttle counters must be shared by every worker process; the default
+# in-process cache would give each worker its own count.
+if os.getenv("CACHE_URL"):
+    CACHES = {"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": os.getenv("CACHE_URL")}}
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(os.getenv("ACCESS_TOKEN_LIFETIME_MINUTES", "30"))),

@@ -18,3 +18,18 @@ def _clinic_of(obj):
     if isinstance(obj, Clinic):
         return obj
     return getattr(obj, "clinic", None)
+
+
+def record_many(request, action: str, objects) -> None:
+    """One row per object, for list pages: "who saw this patient" must cover lists too."""
+    AuditLog.objects.bulk_create(
+        AuditLog(
+            clinic=getattr(request, "clinic", None) or _clinic_of(obj),
+            actor=request.user if request.user.is_authenticated else None,
+            action=action,
+            target_type=obj._meta.label_lower,
+            target_id=obj.pk,
+            ip_address=request.META.get("REMOTE_ADDR"),
+        )
+        for obj in objects
+    )

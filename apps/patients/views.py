@@ -1,3 +1,5 @@
+import re
+
 from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
@@ -8,7 +10,8 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.audit.models import AuditLog
-from apps.audit.services import record
+from apps.audit.services import record, record_many
+from apps.billing.balance import annotate_balance
 from apps.bot.credentials import issue_for_patient, reset
 from apps.bot.serializers import BotAccessSerializer
 from apps.bot.views import respond_with_access
@@ -55,6 +58,15 @@ class PatientViewSet(
         "reset_bot_access": "patient:bot_access",
     }
 
+    # The list shows each patient's debt so the desk sees it before booking.
+    BALANCE_ACTIONS = frozenset({"list", "search", "retrieve"})
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.action in self.BALANCE_ACTIONS and self.has_perm("payment:view"):
+            queryset = annotate_balance(queryset)
+        return queryset
+
     def scope_queryset(self, queryset):
         # A doctor sees patients assigned to them or booked with them.
         return queryset.filter(patient_filter(self.request, prefix="")).distinct()
@@ -83,6 +95,11 @@ class PatientViewSet(
         self._guard_primary_doctor(serializer)
         super().perform_update(serializer)
 
+    def list(self, request, *args, **kwargs):
+        page = self.paginate_queryset(self.filter_queryset(self.get_queryset()))
+        record_many(request, AuditLog.Action.VIEW, page)
+        return self.get_paginated_response(self.get_serializer(page, many=True).data)
+
     def filter_queryset(self, queryset):
         queryset = super().filter_queryset(queryset)
         if self.action == "list" and "archived" not in self.request.query_params:
@@ -95,10 +112,20 @@ class PatientViewSet(
         params = PatientSearchSerializer(data=request.data)
         params.is_valid(raise_exception=True)
         text = params.validated_data["query"].strip()
-        queryset = self.get_queryset().filter(Q(full_name__icontains=text) | Q(phone_number__icontains=text))
+        # Every word must match, in any order: "Vali Aliyev" finds "Aliyev Vali".
+        by_name = Q()
+        for word in text.split():
+            by_name &= Q(full_name__icontains=word)
+        matches = by_name | Q(phone_number__icontains=text)
+        # Phones are stored as +998XXXXXXXXX; staff type "91 108-71" or "(91) 108".
+        digits = re.sub(r"\D", "", text)
+        if len(digits) >= 3:
+            matches |= Q(phone_number__icontains=digits)
+        queryset = self.get_queryset().filter(matches)
         if not params.validated_data["include_archived"]:
             queryset = queryset.filter(archived_at__isnull=True)
         page = self.paginate_queryset(queryset.order_by("full_name"))
+        record_many(request, AuditLog.Action.VIEW, page)
         return self.get_paginated_response(self.get_serializer(page, many=True).data)
 
     @extend_schema(request=None, responses={200: PatientSerializer})

@@ -103,3 +103,10 @@ def test_errors_answer_with_a_generic_message(caplog):
     asyncio.run(on_error(update, SimpleNamespace(bot=bot, error=ValueError("secret-password"))))
     assert bot.sent[0][1]["text"] == texts.SOMETHING_WRONG
     assert "secret-password" not in caplog.text
+
+
+def test_a_lazy_file_is_read_at_send_time():
+    bot = FakeBot()
+    lazy = dialog.OutgoingFile(name="a.pdf", load=lambda: b"%PDF")
+    run(dialog.Reply(messages=[dialog.Out(file=lazy)]), bot)
+    assert bot.sent[0][1]["document"] == b"%PDF"

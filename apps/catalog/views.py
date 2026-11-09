@@ -1,3 +1,5 @@
+from apps.audit.models import AuditLog
+from apps.audit.services import record
 from apps.catalog.models import Service, ServiceCategory
 from apps.catalog.serializers import ServiceCategorySerializer, ServiceSerializer
 from apps.tenancy.viewsets import ClinicScopedModelViewSet
@@ -25,3 +27,15 @@ class ServiceViewSet(ClinicScopedModelViewSet):
     filterset_fields = ["category", "specialty", "is_active"]
     required_permissions = _PERMS
     audit_reads = False
+
+    def perform_destroy(self, instance):
+        from apps.dental.models import PlanItem, Procedure
+
+        if Procedure.objects.filter(service=instance).exists() or PlanItem.objects.filter(service=instance).exists():
+            # Procedures and plans keep pointing at it (their prices are history),
+            # so a used service leaves the price list instead of the database.
+            instance.is_active = False
+            instance.save(update_fields=["is_active", "updated_at"])
+            record(self.request, AuditLog.Action.ARCHIVE, instance)
+            return
+        super().perform_destroy(instance)

@@ -7,7 +7,22 @@ from django.db import models
 from apps.core.models import BaseModel
 from apps.core.validators import validate_fdi_tooth
 
-ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "pdf", "dcm"]
+# The server decides a file's type from its extension. The type a browser
+# declares on upload is the client's word, and a stored `text/html` would be
+# served back as a page.
+CONTENT_TYPES = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+    "pdf": "application/pdf",
+    "dcm": "application/dicom",
+}
+ALLOWED_EXTENSIONS = list(CONTENT_TYPES)
+
+
+def content_type_for(name: str) -> str:
+    return CONTENT_TYPES.get(Path(name).suffix.lower().lstrip("."), "application/octet-stream")
 
 
 def attachment_path(instance, filename: str) -> str:

@@ -54,16 +54,15 @@ async def _send_one(bot, chat_id: int, out: dialog.Out, markup) -> None:
         if out.text:
             await bot.send_message(chat_id=chat_id, text=out.text, reply_markup=markup)
         return
-    if file.is_photo and len(file.data) <= PHOTO_LIMIT:
+    data = await sync_to_async(file.read)()
+    if file.is_photo and len(data) <= PHOTO_LIMIT:
         try:
-            await bot.send_photo(chat_id=chat_id, photo=file.data, caption=out.text, reply_markup=markup)
+            await bot.send_photo(chat_id=chat_id, photo=data, caption=out.text, reply_markup=markup)
             return
         except TelegramError:
             # Telegram rejects some images as photos (size, ratio); a document always works.
             pass
-    await bot.send_document(
-        chat_id=chat_id, document=file.data, filename=file.name, caption=out.text, reply_markup=markup
-    )
+    await bot.send_document(chat_id=chat_id, document=data, filename=file.name, caption=out.text, reply_markup=markup)
 
 
 async def _send(update: Update, context: ContextTypes.DEFAULT_TYPE, reply: dialog.Reply) -> None:
