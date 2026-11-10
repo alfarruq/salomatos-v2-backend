@@ -53,6 +53,8 @@ _ADMIN = (_DOCTOR - {"statistics:view", "payroll:view_own"}) | {
 }
 
 _OWNER = _ADMIN | {
+    # Open, rename and close branches; also checked against Organization.owners.
+    "branch:manage",
     "clinic:manage",
     "staff:manage",
     "service:manage",

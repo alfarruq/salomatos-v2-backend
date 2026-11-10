@@ -22,6 +22,7 @@ from apps.finance.views import (
 from apps.imaging.views import AttachmentViewSet
 from apps.patients.views import PatientViewSet
 from apps.scheduling.views import AppointmentViewSet, ChairViewSet
+from apps.tenancy.branches import BranchViewSet
 from apps.tenancy.views import CurrentClinicView, SpecialtyViewSet, StaffViewSet
 from apps.voice.views import VoiceViewSet
 
@@ -29,6 +30,7 @@ admin.site.site_header = "SalomatOS Admin"
 
 router = DefaultRouter()
 router.include_root_view = False
+router.register("branches", BranchViewSet, basename="branch")
 router.register("specialties", SpecialtyViewSet, basename="specialty")
 router.register("staff", StaffViewSet, basename="staff")
 router.register("patients", PatientViewSet, basename="patient")
