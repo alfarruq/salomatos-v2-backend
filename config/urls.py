@@ -74,6 +74,8 @@ urlpatterns = [
     # Configurable so a deployment can move the operator login off the guessable path.
     path(settings.ADMIN_URL, admin.site.urls),
     path("api/v1/", include(api_v1)),
+    # The vendor's panel: a separate site with its own login; it never reads patient rows.
+    path("api/platform/v1/", include("apps.saas.urls")),
 ]
 
 # The schema maps every endpoint and field; it is a development aid, not a public page.

@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "apps.finance",
     "apps.bot",
     "apps.voice",
+    "apps.saas",
 ]
 
 MIDDLEWARE = [
@@ -171,6 +172,11 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "2.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
+    "ENUM_NAME_OVERRIDES": {
+        "PlatformPaymentKindEnum": "apps.saas.models.PlatformPayment.Kind",
+        "AttachmentKindEnum": "apps.imaging.models.Attachment.Kind",
+        "BotAccountKindEnum": "apps.bot.models.BotAccount.Kind",
+    },
 }
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")

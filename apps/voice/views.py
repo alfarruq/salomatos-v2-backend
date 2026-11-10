@@ -1,6 +1,5 @@
 import logging
 
-from django.conf import settings
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
@@ -9,6 +8,8 @@ from rest_framework.exceptions import APIException, PermissionDenied, Throttled
 from rest_framework.response import Response
 
 from apps.patients.access import ensure_patient_visible
+from apps.saas import entitlements
+from apps.saas.models import PlatformPayment
 from apps.tenancy.viewsets import ClinicScopedMixin
 from apps.voice import llm
 from apps.voice.drafts import FORMS, build_draft
@@ -22,6 +23,12 @@ class VoiceUnavailableError(APIException):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     default_detail = "Voice input is not configured."
     default_code = "voice_unavailable"
+
+
+class VoiceNotSubscribedError(APIException):
+    status_code = status.HTTP_403_FORBIDDEN
+    default_detail = "The voice add-on is not paid for this clinic."
+    default_code = "voice_not_subscribed"
 
 
 class VoiceFailedError(APIException):
@@ -48,12 +55,16 @@ class VoiceViewSet(ClinicScopedMixin, viewsets.GenericViewSet):
     @extend_schema(responses={200: VoiceStatusSerializer})
     @action(detail=False, methods=["get"])
     def status(self, request):
+        organization = request.clinic.organization
+        subscribed = entitlements.voice_active(organization)
         return Response(
             VoiceStatusSerializer(
                 {
-                    "enabled": llm.is_configured(),
+                    "enabled": llm.is_configured() and subscribed,
+                    "subscribed": subscribed,
+                    "paid_until": entitlements.paid_until(organization, PlatformPayment.Kind.VOICE),
                     "used_this_month": _used_this_month(request.clinic),
-                    "monthly_limit": settings.VOICE_MONTHLY_LIMIT,
+                    "monthly_limit": entitlements.voice_limit(organization),
                 }
             ).data
         )
@@ -70,7 +81,11 @@ class VoiceViewSet(ClinicScopedMixin, viewsets.GenericViewSet):
         patient = params.validated_data.get("patient")
         if patient is not None:
             ensure_patient_visible(request, patient)
-        if _used_this_month(request.clinic) >= settings.VOICE_MONTHLY_LIMIT:
+        organization = request.clinic.organization
+        # A paid add-on: the vendor turns it on per customer from the platform panel.
+        if not entitlements.voice_active(organization):
+            raise VoiceNotSubscribedError()
+        if _used_this_month(request.clinic) >= entitlements.voice_limit(organization):
             raise Throttled(detail="The clinic's monthly voice limit is used up.")
 
         try:

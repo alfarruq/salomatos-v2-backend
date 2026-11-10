@@ -63,5 +63,7 @@ class VoiceDraftSerializer(serializers.Serializer):
 
 class VoiceStatusSerializer(serializers.Serializer):
     enabled = serializers.BooleanField()
+    subscribed = serializers.BooleanField()
+    paid_until = serializers.DateField(allow_null=True)
     used_this_month = serializers.IntegerField()
     monthly_limit = serializers.IntegerField()

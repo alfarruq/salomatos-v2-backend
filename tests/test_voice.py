@@ -1,12 +1,32 @@
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
 
 from apps.catalog.models import Service
+from apps.saas.models import Contract, PlatformPayment
 from apps.voice import llm
 from apps.voice.models import VoiceUsage
+from tests.conftest import make_user
 
 URL = "/api/v1/voice/draft/"
+
+
+@pytest.fixture(autouse=True)
+def subscribed(world):
+    """Both customers have paid for the add-on; tests that need otherwise undo it."""
+    operator = make_user("vendor")
+    for organization in (world.org, world.other_org):
+        Contract.objects.create(organization=organization, voice_enabled=True)
+        PlatformPayment.objects.create(
+            organization=organization,
+            kind=PlatformPayment.Kind.VOICE,
+            amount=10,
+            currency="USD",
+            paid_on=date.today(),
+            covers_until=date.today() + timedelta(days=30),
+            recorded_by=operator,
+        )
 
 
 @pytest.fixture
@@ -192,3 +212,20 @@ def test_needs_one_branch(world, model):
         URL, {"form": "patient", "text": "abc"}, format="json"
     )
     assert response.status_code == 400
+
+
+def test_needs_the_paid_add_on(world, model):
+    model({"full_name": "", "phone_number": "", "birth_date": None, "gender": "", "address": "", "notes": ""})
+    api = world.client(world.doctor_a)
+    PlatformPayment.objects.filter(organization=world.org).update(covers_until=date.today() - timedelta(days=1))
+    status = api.get("/api/v1/voice/status/").json()
+    assert status["enabled"] is False
+    assert status["subscribed"] is False
+    response = api.post(URL, {"form": "patient", "text": "abc"}, format="json")
+    assert response.status_code == 403
+    assert not VoiceUsage.objects.exists()
+
+    Contract.objects.filter(organization=world.org).update(voice_monthly_limit=0)
+    PlatformPayment.objects.filter(organization=world.org).update(covers_until=date.today())
+    # The vendor's per-customer limit replaces the platform default.
+    assert api.post(URL, {"form": "patient", "text": "abc"}, format="json").status_code == 429

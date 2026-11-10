@@ -60,7 +60,7 @@ class RefreshView(APIView):
             raise BaseUnauthorizedException(message="Session expired.", message_key="session_expired") from err
         from apps.accounts.models import User
 
-        user = User.objects.filter(pk=user_id, is_active=True).first()
+        user = User.objects.filter(pk=user_id, is_active=True, is_platform_operator=False).first()
         if user is None:
             raise BaseUnauthorizedException(message="Session expired.", message_key="session_expired")
         return Response(_token_result(RefreshToken.for_user(user)))

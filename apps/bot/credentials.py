@@ -127,13 +127,25 @@ def authenticate(chat_id: int, login: str, password: str) -> tuple[str, BotAccou
 
 
 def _subject_active(account: BotAccount) -> bool:
+    clinic = account.clinic
+    if clinic is not None and not (clinic.is_active and clinic.organization.is_active):
+        return False
     if account.kind == BotAccount.Kind.PATIENT:
         return account.patient.archived_at is None
-    return account.user.is_active and account.user.memberships.filter(is_active=True).exists()
+    return (
+        account.user.is_active
+        and account.user.memberships.filter(
+            is_active=True, clinic__is_active=True, clinic__organization__is_active=True
+        ).exists()
+    )
 
 
 def account_for_chat(chat_id: int) -> BotAccount | None:
-    account = BotAccount.objects.select_related("patient", "user", "clinic").filter(telegram_chat_id=chat_id).first()
+    account = (
+        BotAccount.objects.select_related("patient", "user", "clinic__organization")
+        .filter(telegram_chat_id=chat_id)
+        .first()
+    )
     if account is None or not _subject_active(account):
         return None
     return account
