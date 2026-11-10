@@ -9,6 +9,7 @@ enough, because that person does not own the other branches.
 
 from django.db import transaction
 from django.db.models import Count, Q
+from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
@@ -18,6 +19,8 @@ from apps.audit.models import AuditLog
 from apps.audit.services import record
 from apps.catalog.models import Service, ServiceCategory
 from apps.tenancy.models import Clinic, Membership, Specialty
+from apps.tenancy.moves import MAX_PATIENTS
+from apps.tenancy.moves import move_patients as move_between_branches
 from apps.tenancy.viewsets import ClinicScopedMixin
 
 
@@ -100,6 +103,23 @@ def copy_catalog(source: Clinic, target: Clinic) -> None:
     )
 
 
+class BranchDoctorSerializer(serializers.ModelSerializer):
+    full_name = serializers.CharField(source="user.full_name", read_only=True)
+
+    class Meta:
+        model = Membership
+        fields = ["id", "full_name"]
+
+
+class MovePatientsSerializer(serializers.Serializer):
+    patients = serializers.ListField(child=serializers.UUIDField(), min_length=1, max_length=MAX_PATIENTS)
+    doctor = serializers.UUIDField(help_text="An active doctor of the target branch who takes the patients over.")
+
+
+class MovePatientsResultSerializer(serializers.Serializer):
+    moved = serializers.IntegerField()
+
+
 class BranchViewSet(
     ClinicScopedMixin,
     mixins.ListModelMixin,
@@ -119,6 +139,8 @@ class BranchViewSet(
         "partial_update": "branch:manage",
         "destroy": "branch:manage",
         "reactivate": "branch:manage",
+        "doctors": "branch:manage",
+        "move_patients": "branch:manage",
     }
 
     def check_permissions(self, request):
@@ -146,6 +168,13 @@ class BranchViewSet(
             .order_by("created_at")
         )
 
+    def get_serializer_class(self):
+        if self.action == "move_patients":
+            return MovePatientsSerializer
+        if self.action == "doctors":
+            return BranchDoctorSerializer
+        return BranchSerializer
+
     def perform_create(self, serializer):
         branch = serializer.save()
         record(self.request, AuditLog.Action.CREATE, branch, clinic=branch)
@@ -171,3 +200,38 @@ class BranchViewSet(
         branch.save(update_fields=["is_active", "updated_at"])
         record(request, AuditLog.Action.RESTORE, branch, clinic=branch)
         return Response(self.get_serializer(self.get_queryset().get(pk=branch.pk)).data)
+
+    @action(detail=True, methods=["get"])
+    def doctors(self, request, pk=None):
+        """The target branch's doctors, for choosing who takes moved patients over."""
+        branch = self.get_object()
+        doctors = (
+            Membership.objects.filter(clinic=branch, role=Membership.Role.DOCTOR, is_active=True)
+            .select_related("user")
+            .order_by("user__full_name")
+        )
+        return Response(BranchDoctorSerializer(doctors, many=True).data)
+
+    @extend_schema(request=MovePatientsSerializer, responses={200: MovePatientsResultSerializer})
+    @action(detail=True, methods=["post"], url_path="move-patients")
+    def move_patients(self, request, pk=None):
+        """Moves patients of the branch in `X-Clinic-Id` to this one (see `apps.tenancy.moves`)."""
+        target = self.get_object()
+        source = request.clinic
+        if target.pk == source.pk or not target.is_active:
+            raise ValidationError({"branch": "Choose another open branch."}, code="invalid")
+        data = self.get_serializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        doctor = Membership.objects.filter(
+            clinic=target, pk=data.validated_data["doctor"], role=Membership.Role.DOCTOR, is_active=True
+        ).first()
+        if doctor is None:
+            raise ValidationError({"doctor": "Invalid pk - object does not exist."}, code="does_not_exist")
+        moved = move_between_branches(
+            source=source, target=target, patient_ids=data.validated_data["patients"], doctor=doctor
+        )
+        for patient in moved:
+            # Both branches log it: the old one lost the record, the new one gained it.
+            record(request, AuditLog.Action.UPDATE, patient, clinic=source)
+            record(request, AuditLog.Action.UPDATE, patient, clinic=target)
+        return Response({"moved": len(moved)})
