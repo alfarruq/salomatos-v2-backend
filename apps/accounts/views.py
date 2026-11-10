@@ -1,5 +1,6 @@
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -20,6 +21,7 @@ from apps.accounts.throttles import LoginUsernameThrottle
 from apps.audit.models import AuditLog
 from apps.audit.services import record
 from apps.core.exceptions import BaseUnauthorizedException
+from apps.saas import entitlements
 
 
 def _token_result(refresh: RefreshToken) -> dict:
@@ -102,6 +104,8 @@ class ChangePasswordView(APIView):
 
     @extend_schema(request=ChangePasswordSerializer, responses={204: None}, tags=["Auth"])
     def post(self, request):
+        if not entitlements.owner_may_change_password(request.user):
+            raise PermissionDenied("Your password is managed by the vendor. Ask them to change it.", "password_managed")
         serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         request.user.set_password(serializer.validated_data["new_password"])
