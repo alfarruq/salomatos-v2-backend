@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from apps.saas.models import Contract, PlatformEvent, PlatformPayment
 from apps.saas.tokens import platform_refresh_for
-from apps.tenancy.models import Clinic, Membership
+from apps.tenancy.models import Clinic, Membership, Organization
 from tests.conftest import PASSWORD, make_user
 
 BASE = "/api/platform/v1"
@@ -108,7 +108,7 @@ def test_create_customer_with_branch_and_owner(platform):
     # The owner signs in to the clinic app with the temporary password.
     login = APIClient().post(
         "/api/v1/auth/login/",
-        {"username": body["owner_username"], "password": body["owner_temporary_password"]},
+        {"username": body["owner_username"], "password": body["owner_password"]},
         format="json",
     )
     assert login.status_code == 200
@@ -177,7 +177,7 @@ def test_reset_owner_password(platform, world):
         f"{BASE}/organizations/{world.org.pk}/reset-owner-password/", {"owner": str(world.owner.pk)}, format="json"
     )
     assert response.status_code == 200
-    password = response.json()["temporary_password"]
+    password = response.json()["password"]
     world.owner.refresh_from_db()
     assert world.owner.check_password(password)
     # Someone who is not an owner of this customer cannot be reset through it.
@@ -290,9 +290,13 @@ def test_dashboard(platform, world):
 def test_issued_password_is_readable_until_the_owner_changes_it(platform):
     body = new_customer(platform)
     organization_id = body["organization"]["id"]
-    temporary = body["owner_temporary_password"]
+    temporary = body["owner_password"]
+    # Only an owner who is allowed to change it can replace the issued password.
+    platform.patch(
+        f"{BASE}/organizations/{organization_id}/", {"contract": {"owner_can_change_password": True}}, format="json"
+    )
     detail = platform.get(f"{BASE}/organizations/{organization_id}/").json()
-    assert detail["owners"][0]["temporary_password"] == temporary
+    assert detail["owners"][0]["password"] == temporary
     assert PlatformEvent.objects.filter(action=PlatformEvent.Action.REVEAL_PASSWORD).exists()
     # The list shows the login but never a password.
     row = platform.get(f"{BASE}/organizations/").json()["results"][0]
@@ -311,7 +315,7 @@ def test_issued_password_is_readable_until_the_owner_changes_it(platform):
     )
     assert changed.status_code == 204
     detail = platform.get(f"{BASE}/organizations/{organization_id}/").json()
-    assert detail["owners"][0]["temporary_password"] is None
+    assert detail["owners"][0]["password"] is None
     assert "Another-Str0ng-pass" not in str(detail)
 
 
@@ -321,12 +325,12 @@ def test_reset_issues_a_new_readable_password(platform, world):
     ).json()
     detail = platform.get(f"{BASE}/organizations/{world.org.pk}/").json()
     owner = next(row for row in detail["owners"] if row["username"] == "owner")
-    assert owner["temporary_password"] == reset["temporary_password"]
+    assert owner["password"] == reset["password"]
 
 
 def test_owners_without_an_issued_password_show_none(platform, world):
     detail = platform.get(f"{BASE}/organizations/{world.org.pk}/").json()
-    assert all(row["temporary_password"] is None for row in detail["owners"])
+    assert all(row["password"] is None for row in detail["owners"])
 
 
 def test_credentials_sheet_lists_logins_with_current_passwords(platform, world):
@@ -334,11 +338,86 @@ def test_credentials_sheet_lists_logins_with_current_passwords(platform, world):
     sheet = platform.get(f"{BASE}/credentials/")
     assert sheet.status_code == 200
     rows = {row["username"]: row for row in sheet.json()}
-    assert rows["tabassum_owner"]["temporary_password"] == body["owner_temporary_password"]
-    assert rows["owner"]["temporary_password"] is None
+    assert rows["tabassum_owner"]["password"] == body["owner_password"]
+    assert rows["owner"]["password"] is None
     assert PlatformEvent.objects.filter(action=PlatformEvent.Action.REVEAL_PASSWORD).exists()
 
 
 def test_credentials_sheet_is_platform_only(world):
     assert world.client(world.owner).get(f"{BASE}/credentials/").status_code == 403
     assert APIClient().get(f"{BASE}/credentials/").status_code == 401
+
+
+# --- Vendor-chosen passwords --------------------------------------------------------
+
+
+def test_vendor_chooses_the_first_password(platform):
+    body = new_customer(
+        platform, owner={"username": "chosen", "full_name": "Owner", "password": "Vendor-chosen-pass-1"}
+    )
+    assert body["owner_password"] == "Vendor-chosen-pass-1"
+    login = APIClient().post(
+        "/api/v1/auth/login/", {"username": "chosen", "password": "Vendor-chosen-pass-1"}, format="json"
+    )
+    assert login.status_code == 200
+    detail = platform.get(f"{BASE}/organizations/{body['organization']['id']}/").json()
+    assert detail["owners"][0]["password"] == "Vendor-chosen-pass-1"
+
+
+def test_weak_chosen_password_is_refused(platform):
+    response = platform.post(
+        f"{BASE}/organizations/",
+        {
+            "name": "X",
+            "clinic": {"name": "X"},
+            "owner": {"username": "weak", "full_name": "X", "password": "12345678"},
+        },
+        format="json",
+    )
+    assert response.status_code == 400
+    assert not Organization.objects.filter(name="X").exists()
+
+
+def test_reset_with_a_chosen_password(platform, world):
+    url = f"{BASE}/organizations/{world.org.pk}/reset-owner-password/"
+    ok = platform.post(url, {"owner": str(world.owner.pk), "password": "Another-chosen-pass-2"}, format="json")
+    assert ok.status_code == 200
+    assert ok.json()["password"] == "Another-chosen-pass-2"
+    world.owner.refresh_from_db()
+    assert world.owner.check_password("Another-chosen-pass-2")
+    weak = platform.post(url, {"owner": str(world.owner.pk), "password": "short"}, format="json")
+    assert weak.status_code == 400
+
+
+def test_owner_cannot_change_a_vendor_managed_password(platform):
+    body = new_customer(platform)
+    owner = APIClient()
+    tokens = owner.post(
+        "/api/v1/auth/login/", {"username": "tabassum_owner", "password": body["owner_password"]}, format="json"
+    ).json()
+    owner.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['result']['access_token']}")
+    assert owner.get("/api/v1/auth/me/").json()["can_change_password"] is False
+    blocked = owner.post(
+        "/api/v1/auth/change-password/",
+        {"old_password": body["owner_password"], "new_password": "Another-Str0ng-pass"},
+        format="json",
+    )
+    assert blocked.status_code == 403
+    # The vendor's copy stays valid and readable.
+    detail = platform.get(f"{BASE}/organizations/{body['organization']['id']}/").json()
+    assert detail["owners"][0]["password"] == body["owner_password"]
+
+
+def test_staff_and_customers_without_a_contract_can_still_change_theirs(world):
+    api = world.client(world.owner)
+    assert api.get("/api/v1/auth/me/").json()["can_change_password"] is True
+    ok = api.post(
+        "/api/v1/auth/change-password/",
+        {"old_password": PASSWORD, "new_password": "Another-Str0ng-pass"},
+        format="json",
+    )
+    assert ok.status_code == 204
+    # A branch admin is not an owner of the customer, so the lock never reaches them.
+    Contract.objects.create(organization=world.org, owner_can_change_password=False)
+    admin = world.client(world.admin_a)
+    assert admin.get("/api/v1/auth/me/").json()["can_change_password"] is True

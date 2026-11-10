@@ -1,4 +1,3 @@
-import secrets
 import uuid
 from datetime import timedelta
 
@@ -26,7 +25,7 @@ from apps.core.exceptions import BaseUnauthorizedException
 from apps.dental.models import Procedure
 from apps.imaging.models import Attachment
 from apps.patients.models import Patient
-from apps.saas import credentials, entitlements
+from apps.saas import credentials, entitlements, passwords
 from apps.saas.audit import record
 from apps.saas.models import Contract, PlatformEvent, PlatformPayment
 from apps.saas.permissions import IsPlatformOperator
@@ -34,6 +33,7 @@ from apps.saas.serializers import (
     ClinicBriefSerializer,
     CredentialRowSerializer,
     DashboardSerializer,
+    IssuedPasswordSerializer,
     OperatorSerializer,
     OrganizationCreatedSerializer,
     OrganizationCreateSerializer,
@@ -44,7 +44,6 @@ from apps.saas.serializers import (
     PlatformPaymentSerializer,
     PlatformVoidSerializer,
     ResetOwnerPasswordSerializer,
-    TemporaryPasswordSerializer,
     UsageSerializer,
     billing_status,
 )
@@ -60,10 +59,6 @@ TAGS = ["Platform"]
 
 def _token_result(refresh: RefreshToken) -> dict:
     return {"result": {"access_token": str(refresh.access_token), "refresh_token": str(refresh)}}
-
-
-def _temporary_password() -> str:
-    return secrets.token_urlsafe(9)
 
 
 def _month_start():
@@ -162,7 +157,7 @@ class OrganizationViewSet(
 
     def retrieve(self, request, *args, **kwargs):
         response = super().retrieve(request, *args, **kwargs)
-        if any(owner["temporary_password"] for owner in response.data["owners"]):
+        if any(owner["password"] for owner in response.data["owners"]):
             record(request, Event.REVEAL_PASSWORD, self.get_object())
         return response
 
@@ -197,11 +192,12 @@ class OrganizationViewSet(
         params = OrganizationCreateSerializer(data=request.data)
         params.is_valid(raise_exception=True)
         data = params.validated_data
-        password = _temporary_password()
+        owner_data = dict(data["owner"])
+        password = owner_data.pop("password", "") or passwords.generate()
         with transaction.atomic():
             organization = Organization.objects.create(name=data["name"])
             Contract.objects.create(organization=organization, **data.get("contract", {}))
-            owner = User.objects.create_user(password=password, **data["owner"])
+            owner = User.objects.create_user(password=password, **owner_data)
             credentials.issue(owner, password)
             organization.owners.add(owner)
             clinic = Clinic.objects.create(organization=organization, **data["clinic"])
@@ -210,7 +206,7 @@ class OrganizationViewSet(
         body = {
             "organization": self._detail(organization),
             "owner_username": owner.username,
-            "owner_temporary_password": password,
+            "owner_password": password,
         }
         # `organization` is already serialized; the response serializer documents the shape.
         return Response(body, status=status.HTTP_201_CREATED)
@@ -263,7 +259,7 @@ class OrganizationViewSet(
             record(request, Event.CREATE, organization, clinic)
         return Response(self._detail(organization), status=status.HTTP_201_CREATED)
 
-    @extend_schema(request=ResetOwnerPasswordSerializer, responses={200: TemporaryPasswordSerializer})
+    @extend_schema(request=ResetOwnerPasswordSerializer, responses={200: IssuedPasswordSerializer})
     @action(detail=True, methods=["post"], url_path="reset-owner-password")
     def reset_owner_password(self, request, pk=None):
         organization = self.get_object()
@@ -272,13 +268,14 @@ class OrganizationViewSet(
         owner = organization.owners.filter(pk=params.validated_data["owner"]).first()
         if owner is None:
             raise ValidationError({"owner": "Not an owner of this organization."}, code="invalid")
-        password = _temporary_password()
+        password = params.validated_data.get("password") or passwords.generate()
+        passwords.validate_new_password(password, owner)
         owner.set_password(password)
         owner.save(update_fields=["password", "updated_at"])
         credentials.issue(owner, password)
         revoke_all_sessions(owner)
         record(request, Event.RESET_PASSWORD, organization, owner)
-        return Response(TemporaryPasswordSerializer({"username": owner.username, "temporary_password": password}).data)
+        return Response(IssuedPasswordSerializer({"username": owner.username, "password": password}).data)
 
     @extend_schema(responses={200: UsageSerializer})
     @action(detail=True, methods=["get"])
@@ -405,10 +402,10 @@ class CredentialsView(APIView):
                         "owner": owner.pk,
                         "username": owner.username,
                         "full_name": owner.full_name,
-                        "temporary_password": credentials.current(owner),
+                        "password": credentials.current(owner),
                     }
                 )
-        if any(row["temporary_password"] for row in rows):
+        if any(row["password"] for row in rows):
             # One event per read of the sheet: who looked, and when. No passwords in the log.
             record(request, Event.REVEAL_PASSWORD)
         return Response(CredentialRowSerializer(rows, many=True).data)

@@ -41,10 +41,25 @@ class OrganizationBriefSerializer(serializers.Serializer):
 class MeSerializer(serializers.ModelSerializer):
     memberships = serializers.SerializerMethodField()
     organizations = serializers.SerializerMethodField()
+    can_change_password = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "username", "full_name", "phone_number", "email", "memberships", "organizations"]
+        fields = [
+            "id",
+            "username",
+            "full_name",
+            "phone_number",
+            "email",
+            "memberships",
+            "organizations",
+            "can_change_password",
+        ]
+
+    def get_can_change_password(self, obj) -> bool:
+        from apps.saas.entitlements import owner_may_change_password
+
+        return owner_may_change_password(obj)
 
     def get_memberships(self, obj) -> list[dict]:
         memberships = (

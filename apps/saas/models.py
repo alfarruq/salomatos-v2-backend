@@ -29,6 +29,8 @@ class Contract(BaseModel):
     voice_enabled = models.BooleanField(default=False)
     # Null = the platform default (VOICE_MONTHLY_LIMIT).
     voice_monthly_limit = models.PositiveIntegerField(null=True, blank=True)
+    # Off by default: the vendor sets the owner's password and changes it on request.
+    owner_can_change_password = models.BooleanField(default=False)
     signed_on = models.DateField(null=True, blank=True)
     # The vendor's own notes about the deal. Never patient data.
     note = models.CharField(max_length=500, blank=True)

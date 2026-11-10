@@ -4,6 +4,7 @@ from apps.accounts.models import User
 from apps.core.validators import validate_phone
 from apps.saas import credentials, entitlements
 from apps.saas.models import Contract, PlatformPayment
+from apps.saas.passwords import validate_new_password
 from apps.tenancy.models import Clinic, Organization
 
 Kind = PlatformPayment.Kind
@@ -30,6 +31,7 @@ class ContractSerializer(serializers.ModelSerializer):
             "voice_fee_monthly",
             "voice_enabled",
             "voice_monthly_limit",
+            "owner_can_change_password",
             "signed_on",
             "note",
         ]
@@ -43,16 +45,16 @@ class ClinicBriefSerializer(serializers.ModelSerializer):
 
 
 class OwnerSerializer(serializers.ModelSerializer):
-    # The temporary password the vendor issued, while the owner has not replaced it.
-    # Null once the owner chose their own: that one is never stored.
-    temporary_password = serializers.SerializerMethodField()
+    # The password the vendor issued, while it is still the owner's password.
+    # Null once someone changed it: a password the owner chose is never stored.
+    password = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "username", "full_name", "phone_number", "is_active", "temporary_password"]
+        fields = ["id", "username", "full_name", "phone_number", "is_active", "password"]
         read_only_fields = fields
 
-    def get_temporary_password(self, obj) -> str | None:
+    def get_password(self, obj) -> str | None:
         return credentials.current(obj) if self.context.get("reveal") else None
 
 
@@ -65,8 +67,8 @@ class CredentialRowSerializer(serializers.Serializer):
     owner = serializers.UUIDField()
     username = serializers.CharField()
     full_name = serializers.CharField()
-    # Null once the owner replaced the temporary password with their own.
-    temporary_password = serializers.CharField(allow_null=True)
+    # Null once someone changed it: a password the owner chose is never stored.
+    password = serializers.CharField(allow_null=True)
 
 
 class BillingStatusSerializer(serializers.Serializer):
@@ -139,11 +141,18 @@ class NewOwnerSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150)
     full_name = serializers.CharField(max_length=255)
     phone_number = serializers.CharField(max_length=16, required=False, allow_blank=True, validators=[validate_phone])
+    # Chosen by the vendor and handed over by phone or chat; generated when left out.
+    password = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False)
 
     def validate_username(self, value):
         if User.objects.filter(username__iexact=value).exists():
             raise serializers.ValidationError("This username is taken.", code="duplicate")
         return value
+
+    def validate(self, attrs):
+        if attrs.get("password"):
+            validate_new_password(attrs["password"], User(username=attrs["username"], full_name=attrs["full_name"]))
+        return attrs
 
 
 class OrganizationCreateSerializer(serializers.Serializer):
@@ -161,17 +170,18 @@ class OrganizationUpdateSerializer(serializers.Serializer):
 class OrganizationCreatedSerializer(serializers.Serializer):
     organization = OrganizationDetailSerializer()
     owner_username = serializers.CharField()
-    # Shown once so the vendor can hand it over; the owner changes it after the first login.
-    owner_temporary_password = serializers.CharField()
+    owner_password = serializers.CharField()
 
 
 class ResetOwnerPasswordSerializer(serializers.Serializer):
     owner = serializers.UUIDField()
+    # Chosen by the vendor; generated when left out.
+    password = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False)
 
 
-class TemporaryPasswordSerializer(serializers.Serializer):
+class IssuedPasswordSerializer(serializers.Serializer):
     username = serializers.CharField()
-    temporary_password = serializers.CharField()
+    password = serializers.CharField()
 
 
 class UsageSerializer(serializers.Serializer):

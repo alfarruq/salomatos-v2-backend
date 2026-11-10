@@ -34,6 +34,11 @@ def contract_of(organization) -> Contract | None:
     return Contract.objects.filter(organization=organization).first()
 
 
+def owner_may_change_password(user) -> bool:
+    """False while any customer this user owns has the vendor holding the password."""
+    return not Contract.objects.filter(organization__owners=user, owner_can_change_password=False).exists()
+
+
 def voice_active(organization, today: date | None = None) -> bool:
     contract = contract_of(organization)
     if contract is None or not contract.voice_enabled:
