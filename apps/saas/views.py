@@ -32,6 +32,7 @@ from apps.saas.models import Contract, PlatformEvent, PlatformPayment
 from apps.saas.permissions import IsPlatformOperator
 from apps.saas.serializers import (
     ClinicBriefSerializer,
+    CredentialRowSerializer,
     DashboardSerializer,
     OperatorSerializer,
     OrganizationCreatedSerializer,
@@ -384,6 +385,33 @@ class PlatformPaymentViewSet(
         payment.save(update_fields=["voided_at", "voided_by", "void_reason", "updated_at"])
         record(request, Event.VOID, payment.organization, payment)
         return Response(PlatformPaymentSerializer(payment).data)
+
+
+class CredentialsView(APIView):
+    """Every customer's owner logins with the temporary passwords that are still current."""
+
+    permission_classes = [IsPlatformOperator]
+
+    @extend_schema(responses={200: CredentialRowSerializer(many=True)}, tags=TAGS)
+    def get(self, request):
+        rows = []
+        for organization in Organization.objects.prefetch_related("owners").order_by("name"):
+            for owner in sorted(organization.owners.all(), key=lambda user: user.username):
+                rows.append(
+                    {
+                        "organization": organization.pk,
+                        "organization_name": organization.name,
+                        "is_active": organization.is_active,
+                        "owner": owner.pk,
+                        "username": owner.username,
+                        "full_name": owner.full_name,
+                        "temporary_password": credentials.current(owner),
+                    }
+                )
+        if any(row["temporary_password"] for row in rows):
+            # One event per read of the sheet: who looked, and when. No passwords in the log.
+            record(request, Event.REVEAL_PASSWORD)
+        return Response(CredentialRowSerializer(rows, many=True).data)
 
 
 class DashboardView(APIView):

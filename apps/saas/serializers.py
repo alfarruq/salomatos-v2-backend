@@ -56,6 +56,19 @@ class OwnerSerializer(serializers.ModelSerializer):
         return credentials.current(obj) if self.context.get("reveal") else None
 
 
+class CredentialRowSerializer(serializers.Serializer):
+    """One owner login of one customer, for the vendor's hand-over sheet."""
+
+    organization = serializers.UUIDField()
+    organization_name = serializers.CharField()
+    is_active = serializers.BooleanField()
+    owner = serializers.UUIDField()
+    username = serializers.CharField()
+    full_name = serializers.CharField()
+    # Null once the owner replaced the temporary password with their own.
+    temporary_password = serializers.CharField(allow_null=True)
+
+
 class BillingStatusSerializer(serializers.Serializer):
     currency = serializers.CharField()
     install_fee = serializers.DecimalField(max_digits=14, decimal_places=2)

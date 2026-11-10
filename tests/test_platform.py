@@ -327,3 +327,18 @@ def test_reset_issues_a_new_readable_password(platform, world):
 def test_owners_without_an_issued_password_show_none(platform, world):
     detail = platform.get(f"{BASE}/organizations/{world.org.pk}/").json()
     assert all(row["temporary_password"] is None for row in detail["owners"])
+
+
+def test_credentials_sheet_lists_logins_with_current_passwords(platform, world):
+    body = new_customer(platform)
+    sheet = platform.get(f"{BASE}/credentials/")
+    assert sheet.status_code == 200
+    rows = {row["username"]: row for row in sheet.json()}
+    assert rows["tabassum_owner"]["temporary_password"] == body["owner_temporary_password"]
+    assert rows["owner"]["temporary_password"] is None
+    assert PlatformEvent.objects.filter(action=PlatformEvent.Action.REVEAL_PASSWORD).exists()
+
+
+def test_credentials_sheet_is_platform_only(world):
+    assert world.client(world.owner).get(f"{BASE}/credentials/").status_code == 403
+    assert APIClient().get(f"{BASE}/credentials/").status_code == 401
