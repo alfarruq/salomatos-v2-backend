@@ -1,10 +1,14 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.catalog.models import Service
 from apps.patients.models import Patient
+from apps.saas.models import Contract, PlatformPayment
 from apps.scheduling.models import Chair
 from apps.tenancy.models import Clinic, Membership, Organization
 
@@ -27,6 +31,21 @@ class Command(BaseCommand):
 
         org = Organization.objects.create(name="Demo Dental")
         org.owners.add(user("demo_owner", "Demo Owner"))
+        # The vendor's side: a platform login, a contract and a paid voice add-on.
+        operator = user("demo_platform", "Demo Platform Operator")
+        operator.is_platform_operator = True
+        operator.save(update_fields=["is_platform_operator"])
+        Contract.objects.create(organization=org, install_fee=1000, server_fee_yearly=80, voice_enabled=True)
+        today = timezone.localdate()
+        PlatformPayment.objects.create(
+            organization=org,
+            kind=PlatformPayment.Kind.VOICE,
+            amount=10,
+            currency="USD",
+            paid_on=today,
+            covers_until=today + timedelta(days=365),
+            recorded_by=operator,
+        )
         for index, name in enumerate(["Demo Branch Chilonzor", "Demo Branch Yunusobod"], start=1):
             clinic = Clinic.objects.create(organization=org, name=name)
             Membership.objects.create(

@@ -37,6 +37,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     # Django admin access; also marks platform operators.
     is_staff = models.BooleanField(default=False)
+    # The vendor's own staff (platform panel). Such a login holds no clinic
+    # membership and cannot sign in to the clinic app.
+    is_platform_operator = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

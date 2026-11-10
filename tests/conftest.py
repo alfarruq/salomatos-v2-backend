@@ -77,3 +77,11 @@ def fast_password_hashing(settings):
     # Every patient and doctor now gets a hashed bot password; the production
     # hasher's work factor would make the suite crawl without proving anything.
     settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+
+@pytest.fixture(autouse=True)
+def clear_throttle_counters():
+    # Login throttles count in the shared cache; without this the suite's many logins trip the limit.
+    from django.core.cache import cache
+
+    cache.clear()

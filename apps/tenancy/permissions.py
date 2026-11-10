@@ -6,6 +6,7 @@ the clinic"; without it a doctor sees only rows assigned to them.
 
 from rest_framework.permissions import BasePermission
 
+from apps.saas.tokens import is_platform_token
 from apps.tenancy.models import Membership
 
 Role = Membership.Role
@@ -88,6 +89,9 @@ class HasClinicPermission(BasePermission):
     """
 
     def has_permission(self, request, view):
+        # A platform token never opens clinic data, even if its user were given a membership.
+        if is_platform_token(request.auth):
+            return False
         required = getattr(view, "required_permissions", {}).get(
             getattr(view, "action", None) or request.method.lower()
         )

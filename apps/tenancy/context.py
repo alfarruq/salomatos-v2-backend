@@ -29,7 +29,14 @@ def resolve_membership(request) -> Membership:
         raise ValidationError({"clinic": "X-Clinic-Id header is required."}, code="clinic_required")
     membership = (
         Membership.objects.select_related("clinic", "user")
-        .filter(user=request.user, clinic_id=clinic_id, is_active=True, clinic__is_active=True)
+        .filter(
+            user=request.user,
+            clinic_id=clinic_id,
+            is_active=True,
+            clinic__is_active=True,
+            # A suspended customer (unpaid, offboarded) loses every branch at once.
+            clinic__organization__is_active=True,
+        )
         .first()
     )
     if membership is None:

@@ -12,7 +12,8 @@ class LoginSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         user = authenticate(self.context["request"], username=attrs["username"], password=attrs["password"])
-        if user is None or not user.is_active:
+        # Platform operators sign in only through the platform login.
+        if user is None or not user.is_active or user.is_platform_operator:
             # One message for both cases so usernames cannot be enumerated.
             raise serializers.ValidationError("Invalid username or password.", code="invalid_credentials")
         attrs["user"] = user
@@ -47,7 +48,9 @@ class MeSerializer(serializers.ModelSerializer):
 
     def get_memberships(self, obj) -> list[dict]:
         memberships = (
-            Membership.objects.filter(user=obj, is_active=True, clinic__is_active=True)
+            Membership.objects.filter(
+                user=obj, is_active=True, clinic__is_active=True, clinic__organization__is_active=True
+            )
             .select_related("clinic")
             .order_by("clinic__name")
         )
