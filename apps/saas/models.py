@@ -78,6 +78,22 @@ class PlatformPayment(BaseModel):
         return str(self.pk)
 
 
+class IssuedCredential(BaseModel):
+    """The temporary password the vendor handed an owner, readable until the owner replaces it.
+
+    Only the first password is kept, encrypted. `password_hash` is the user's hash at
+    issue time: once the owner (or anyone) sets another password the hashes differ, the
+    copy is stale and is neither shown nor kept. A password the owner chose is never stored.
+    """
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    password_encrypted = models.TextField()
+    password_hash = models.CharField(max_length=256)
+
+    def __str__(self):
+        return str(self.pk)
+
+
 class PlatformEvent(BaseModel):
     """What a platform operator did to which customer. Ids and codes only; append-only."""
 
@@ -90,6 +106,7 @@ class PlatformEvent(BaseModel):
         PAYMENT = "payment", "Payment"
         VOID = "void", "Void"
         RESET_PASSWORD = "reset_password", "Reset password"
+        REVEAL_PASSWORD = "reveal_password", "Reveal temporary password"
 
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
     action = models.CharField(max_length=16, choices=Action.choices)

@@ -282,3 +282,48 @@ def test_dashboard(platform, world):
     assert [row["name"] for row in body["server_overdue"]] == ["Smile Group"]
     assert body["install_due"][0]["due"] == "700.00"
     assert PlatformPayment.objects.count() == 1
+
+
+# --- Issued passwords -------------------------------------------------------------
+
+
+def test_issued_password_is_readable_until_the_owner_changes_it(platform):
+    body = new_customer(platform)
+    organization_id = body["organization"]["id"]
+    temporary = body["owner_temporary_password"]
+    detail = platform.get(f"{BASE}/organizations/{organization_id}/").json()
+    assert detail["owners"][0]["temporary_password"] == temporary
+    assert PlatformEvent.objects.filter(action=PlatformEvent.Action.REVEAL_PASSWORD).exists()
+    # The list shows the login but never a password.
+    row = platform.get(f"{BASE}/organizations/").json()["results"][0]
+    assert row["owner_usernames"] == ["tabassum_owner"]
+    assert temporary not in str(row)
+
+    owner = APIClient()
+    tokens = owner.post(
+        "/api/v1/auth/login/", {"username": "tabassum_owner", "password": temporary}, format="json"
+    ).json()
+    owner.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['result']['access_token']}")
+    changed = owner.post(
+        "/api/v1/auth/change-password/",
+        {"old_password": temporary, "new_password": "Another-Str0ng-pass"},
+        format="json",
+    )
+    assert changed.status_code == 204
+    detail = platform.get(f"{BASE}/organizations/{organization_id}/").json()
+    assert detail["owners"][0]["temporary_password"] is None
+    assert "Another-Str0ng-pass" not in str(detail)
+
+
+def test_reset_issues_a_new_readable_password(platform, world):
+    reset = platform.post(
+        f"{BASE}/organizations/{world.org.pk}/reset-owner-password/", {"owner": str(world.owner.pk)}, format="json"
+    ).json()
+    detail = platform.get(f"{BASE}/organizations/{world.org.pk}/").json()
+    owner = next(row for row in detail["owners"] if row["username"] == "owner")
+    assert owner["temporary_password"] == reset["temporary_password"]
+
+
+def test_owners_without_an_issued_password_show_none(platform, world):
+    detail = platform.get(f"{BASE}/organizations/{world.org.pk}/").json()
+    assert all(row["temporary_password"] is None for row in detail["owners"])

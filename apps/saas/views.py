@@ -26,7 +26,7 @@ from apps.core.exceptions import BaseUnauthorizedException
 from apps.dental.models import Procedure
 from apps.imaging.models import Attachment
 from apps.patients.models import Patient
-from apps.saas import entitlements
+from apps.saas import credentials, entitlements
 from apps.saas.audit import record
 from apps.saas.models import Contract, PlatformEvent, PlatformPayment
 from apps.saas.permissions import IsPlatformOperator
@@ -156,7 +156,14 @@ class OrganizationViewSet(
         return OrganizationListSerializer if self.action == "list" else OrganizationDetailSerializer
 
     def get_serializer_context(self):
-        return {**super().get_serializer_context(), "today": timezone.localdate()}
+        # Only the detail view reads temporary passwords back; the list never does.
+        return {**super().get_serializer_context(), "today": timezone.localdate(), "reveal": self.action != "list"}
+
+    def retrieve(self, request, *args, **kwargs):
+        response = super().retrieve(request, *args, **kwargs)
+        if any(owner["temporary_password"] for owner in response.data["owners"]):
+            record(request, Event.REVEAL_PASSWORD, self.get_object())
+        return response
 
     @extend_schema(
         parameters=[
@@ -194,6 +201,7 @@ class OrganizationViewSet(
             organization = Organization.objects.create(name=data["name"])
             Contract.objects.create(organization=organization, **data.get("contract", {}))
             owner = User.objects.create_user(password=password, **data["owner"])
+            credentials.issue(owner, password)
             organization.owners.add(owner)
             clinic = Clinic.objects.create(organization=organization, **data["clinic"])
             ensure_owner_membership(clinic, owner)
@@ -266,6 +274,7 @@ class OrganizationViewSet(
         password = _temporary_password()
         owner.set_password(password)
         owner.save(update_fields=["password", "updated_at"])
+        credentials.issue(owner, password)
         revoke_all_sessions(owner)
         record(request, Event.RESET_PASSWORD, organization, owner)
         return Response(TemporaryPasswordSerializer({"username": owner.username, "temporary_password": password}).data)

@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from apps.accounts.models import User
 from apps.core.validators import validate_phone
-from apps.saas import entitlements
+from apps.saas import credentials, entitlements
 from apps.saas.models import Contract, PlatformPayment
 from apps.tenancy.models import Clinic, Organization
 
@@ -43,10 +43,17 @@ class ClinicBriefSerializer(serializers.ModelSerializer):
 
 
 class OwnerSerializer(serializers.ModelSerializer):
+    # The temporary password the vendor issued, while the owner has not replaced it.
+    # Null once the owner chose their own: that one is never stored.
+    temporary_password = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ["id", "username", "full_name", "phone_number", "is_active"]
-        read_only_fields = ["id", "is_active"]
+        fields = ["id", "username", "full_name", "phone_number", "is_active", "temporary_password"]
+        read_only_fields = fields
+
+    def get_temporary_password(self, obj) -> str | None:
+        return credentials.current(obj) if self.context.get("reveal") else None
 
 
 class BillingStatusSerializer(serializers.Serializer):
@@ -82,10 +89,14 @@ def billing_status(organization, today) -> dict:
 class OrganizationListSerializer(serializers.ModelSerializer):
     clinic_count = serializers.SerializerMethodField()
     billing = serializers.SerializerMethodField()
+    owner_usernames = serializers.SerializerMethodField()
 
     class Meta:
         model = Organization
-        fields = ["id", "name", "is_active", "created_at", "clinic_count", "billing"]
+        fields = ["id", "name", "is_active", "created_at", "clinic_count", "owner_usernames", "billing"]
+
+    def get_owner_usernames(self, obj) -> list[str]:
+        return sorted(owner.username for owner in obj.owners.all())
 
     def get_clinic_count(self, obj) -> int:
         return obj.clinics.count()
