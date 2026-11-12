@@ -17,6 +17,22 @@ python manage.py runserver
 
 API schema: `/api/schema/` (OpenAPI 3). Swagger UI at `/api/docs/` when `DEBUG=1`.
 
+## Deploy
+
+Merging into `main` deploys automatically once CI is green (`.github/workflows/deploy.yml`
+in this repo and in the two frontend repos). GitHub Actions sends the release over SSH as
+the `ci` user, whose key can only run `deploy/salomat-deploy.sh`: it backs up, syncs the code,
+installs, migrates, restarts and checks the backend, or swaps a site's static files.
+
+One-time server setup, after this file is on the server:
+
+```bash
+sudo bash /srv/salomatos/backend/deploy/setup-ci.sh
+```
+
+It prints `DEPLOY_KNOWN_HOSTS` and `DEPLOY_SSH_KEY`; add both as Actions secrets in all
+three repos. To deploy by hand, re-run the latest Deploy workflow in GitHub.
+
 ## Telegram bot
 
 Patients, doctors and owners use the bot with a login and password the system
