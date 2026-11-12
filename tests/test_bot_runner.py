@@ -1,6 +1,7 @@
 """The Telegram glue, against a fake bot: no network, no token."""
 
 import asyncio
+import logging
 from types import SimpleNamespace
 
 from telegram import InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -110,3 +111,8 @@ def test_a_lazy_file_is_read_at_send_time():
     lazy = dialog.OutgoingFile(name="a.pdf", load=lambda: b"%PDF")
     run(dialog.Reply(messages=[dialog.Out(file=lazy)]), bot)
     assert bot.sent[0][1]["document"] == b"%PDF"
+
+
+def test_http_client_does_not_log_request_urls():
+    # Telegram puts the bot token in every request URL; httpx logs URLs at INFO.
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
