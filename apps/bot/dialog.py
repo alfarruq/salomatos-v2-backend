@@ -8,13 +8,16 @@ name another patient, doctor or clinic.
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+
+from django.utils import timezone
 
 from apps.audit.models import AuditLog
 from apps.bot import content, texts
 from apps.bot.audit import record_bot
 from apps.bot.credentials import LoginResult, account_for_chat, authenticate, sign_out
-from apps.bot.models import BotAccount
+from apps.bot.models import AppointmentReminder, BotAccount
 from apps.clinical.pdf import prescription_pdf
 
 PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
@@ -233,4 +236,25 @@ def evening_reports() -> list[tuple[int, str]]:
             continue
         record_bot(account, AuditLog.Action.VIEW, account, target_type="bot.owner_report", clinic=rows[0].clinic)
         out.append((account.telegram_chat_id, texts.owner_report(day, rows)))
+    return out
+
+
+def appointment_reminders(now: datetime | None = None) -> list[tuple[int, str]]:
+    """Patients who linked the bot hear about a visit the evening before and two hours ahead.
+
+    Leads are patients without `registered_at`, so they are covered too. Only
+    the chat id and the text leave this function; the sent marker is written first.
+    """
+    now = now or timezone.now()
+    kinds = AppointmentReminder.Kind
+    out = []
+    for visit, kind in content.reminder_candidates(now):
+        _, created = AppointmentReminder.objects.get_or_create(
+            appointment=visit, kind=kind, for_start_at=visit.start_at
+        )
+        if not created:
+            continue
+        account = visit.patient.bot_account
+        record_bot(account, AuditLog.Action.VIEW, visit, target_type="bot.appointment_reminder")
+        out.append((account.telegram_chat_id, texts.appointment_reminder(visit, tomorrow=kind == kinds.DAY_BEFORE)))
     return out
