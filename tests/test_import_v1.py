@@ -81,7 +81,10 @@ def _seed(cur):
         " (1, now(), 500000, 200000, 36, %(past)s, 'n', 11, 13, 1, 'completed', 10),"
         " (2, now(), 100000, 0, 99, %(past)s, null, 11, 14, 2, 'in_progress', 10),"
         " (3, now(), 50000, 50000, null, %(past)s, null, 999, 13, 2, 'in_progress', 10),"
-        " (4, now(), 70000, 70000, null, %(past)s, null, 20, 30, 3, 'completed', 20)",
+        " (4, now(), 70000, 70000, null, %(past)s, null, 20, 30, 3, 'completed', 20),"
+        # v1 nulls the link when a patient or a service is deleted.
+        " (5, now(), 30000, 30000, null, %(past)s, null, 11, null, 1, 'completed', 10),"
+        " (6, now(), 20000, 10000, null, %(past)s, null, 11, 13, null, 'completed', 10)",
         {"past": PAST},
     )
     cur.execute(
@@ -143,8 +146,8 @@ def test_commit_imports_only_the_chosen_clinic(v1_source):
     org = Organization.objects.get()
     assert org.name == "ALI X MED (test)"
     clinic = org.clinics.get()
-    assert Patient.objects.filter(clinic=clinic).count() == 2
-    assert Patient.objects.count() == 2
+    assert Patient.objects.filter(clinic=clinic, archived_at__isnull=True).count() == 2
+    assert Patient.objects.count() == 3
     assert not User.objects.filter(username="dentaflow").exists()
 
     owner = User.objects.get(username="alixmed")
@@ -159,13 +162,13 @@ def test_commit_imports_only_the_chosen_clinic(v1_source):
 
 def test_money_matches_v1(v1_source):
     output = _run(v1_source, "--commit")
-    assert Procedure.objects.count() == 3
-    assert sum(p.unit_price for p in Procedure.objects.all()) == Decimal("650000")
+    assert Procedure.objects.count() == 5
+    assert sum(p.unit_price for p in Procedure.objects.all()) == Decimal("700000")
     payments = Payment.objects.all()
-    assert sum(p.amount for p in payments) == Decimal("250000")
+    assert sum(p.amount for p in payments) == Decimal("290000")
     assert {timezone.localtime(p.paid_at).date() for p in payments} == {PAST}
-    assert "v1_debt: 400000" in output
-    assert "v2_debt: 400000\n" in output
+    assert "v1_debt: 410000" in output
+    assert "v2_debt: 410000\n" in output
 
 
 def test_mapping_rules(v1_source):
@@ -207,3 +210,17 @@ def test_existing_username_needs_a_prefix(v1_source):
         _run(v1_source, "--commit")
     _run(v1_source, "--commit", "--username-prefix", "t_")
     assert User.objects.filter(username="t_dr_one").exists()
+
+
+def test_rows_whose_patient_or_service_was_deleted_are_kept(v1_source):
+    output = _run(v1_source, "--commit")
+    orphan = Procedure.objects.get(unit_price=30000)
+    assert orphan.patient.archived_at is not None
+    assert orphan.patient.full_name == "O'chirilgan bemor (v1)"
+    assert orphan.patient.payments.get().amount == Decimal("30000")
+    no_service = Procedure.objects.get(unit_price=20000)
+    assert no_service.patient.full_name == "Patient One"
+    assert no_service.service.name == "O'chirilgan xizmat (v1)"
+    assert not no_service.service.is_active
+    assert "treatment_patient_deleted_kept_on_placeholder: 1" in output
+    assert "treatment_service_deleted_kept_on_placeholder: 1" in output
