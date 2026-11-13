@@ -192,6 +192,11 @@ class ProcedureSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         require_tooth_for_surfaces(attrs)
         patient = attrs["patient"]
+        if patient.is_lead:
+            # The first procedure is where a lead becomes a patient; the desk fills the form first.
+            raise serializers.ValidationError(
+                {"patient": "Register the patient before the first procedure."}, code="lead"
+            )
         plan_item = attrs.get("plan_item")
         if plan_item is not None:
             if plan_item.plan.patient_id != patient.pk:

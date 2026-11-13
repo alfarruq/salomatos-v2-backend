@@ -104,7 +104,9 @@ def doctor_day(doctor: Membership, day: date | None = None) -> DoctorDay:
     return DoctorDay(
         clinic=clinic,
         day=day,
-        new_patients=Patient.objects.filter(primary_doctor=doctor, created_at__gte=start, created_at__lt=end).count(),
+        new_patients=Patient.objects.filter(
+            primary_doctor=doctor, registered_at__gte=start, registered_at__lt=end
+        ).count(),
         procedures=Procedure.objects.filter(
             doctor=doctor, voided_at__isnull=True, performed_at__gte=start, performed_at__lt=end
         ).count(),
@@ -152,7 +154,7 @@ def branch_day(clinic: Clinic, day: date) -> BranchDay:
     debt = annotate_balance(Patient.objects.filter(clinic=clinic)).filter(debt__gt=0).aggregate(s=Sum("debt"))["s"]
     return BranchDay(
         clinic=clinic,
-        new_patients=Patient.objects.filter(clinic=clinic, created_at__gte=start, created_at__lt=end).count(),
+        new_patients=Patient.objects.filter(clinic=clinic, registered_at__gte=start, registered_at__lt=end).count(),
         procedures=procedures["count"],
         procedures_sum=procedures["total"] or ZERO,
         collected=collected or ZERO,

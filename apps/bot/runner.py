@@ -16,6 +16,7 @@ from telegram.error import TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from apps.bot import dialog, texts
+from apps.patients.leads import archive_stale_leads
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,8 @@ MORNING = time(7, 0)
 EVENING = time(20, 0)
 # The job is idempotent (sent markers), so a short period only bounds how late a reminder can be.
 REMINDER_EVERY = 600
+# The bot is the one long-running process on the server, so it also runs the nightly lead cleanup.
+LEAD_CLEANUP = time(3, 0)
 # Bot API upload limits: photos 10 MB, other files 50 MB.
 PHOTO_LIMIT = 10 * 1024 * 1024
 
@@ -144,6 +147,10 @@ async def reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     await _broadcast(context, dialog.appointment_reminders)
 
 
+async def lead_cleanup_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _with_fresh_connection(archive_stale_leads)()
+
+
 def build_application(token: str) -> Application:
     application = Application.builder().token(token).build()
     # Private chats only: in a group, other members would read a patient's data.
@@ -156,6 +163,7 @@ def build_application(token: str) -> Application:
     application.job_queue.run_daily(morning_job, time=MORNING.replace(tzinfo=zone), name="doctor-morning")
     application.job_queue.run_daily(evening_job, time=EVENING.replace(tzinfo=zone), name="owner-evening")
     application.job_queue.run_repeating(reminder_job, interval=REMINDER_EVERY, first=60, name="patient-reminders")
+    application.job_queue.run_daily(lead_cleanup_job, time=LEAD_CLEANUP.replace(tzinfo=zone), name="lead-cleanup")
     return application
 
 
