@@ -3,7 +3,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 
 class Command(BaseCommand):
-    help = "Runs the Telegram bot (long polling) with the 07:00 doctor and 20:00 owner messages."
+    help = "Runs the Telegram bot (long polling) with the 07:00 doctor, 20:00 owner and patient appointment messages."
 
     def handle(self, *args, **options):
         if not settings.TELEGRAM_BOT_TOKEN:

@@ -154,3 +154,18 @@ def owner_report(day: date, rows: list[BranchDay]) -> str:
         )
         lines += ["", "Barcha filiallar", *_branch(total)]
     return "\n".join(lines)
+
+
+def appointment_reminder(visit, *, tomorrow: bool) -> str:
+    clinic = visit.clinic
+    when = local_time(visit.start_at, ZoneInfo(clinic.timezone))
+    if tomorrow:
+        lines = [f"Eslatma: ertaga soat {when} da {clinic.name} klinikasida uchrashuvingiz bor."]
+    else:
+        lines = [f"Eslatma: bugun soat {when} da {clinic.name} klinikasida uchrashuvingiz bor."]
+    lines.append(f"Doktor: {visit.doctor.user.full_name}")
+    if clinic.address:
+        lines.append(f"Manzil: {clinic.address}")
+    if clinic.phone_number:
+        lines.append(f"O'zgartirish yoki bekor qilish uchun: {clinic.phone_number}")
+    return "\n".join(lines)

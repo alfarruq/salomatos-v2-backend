@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 MORNING = time(7, 0)
 EVENING = time(20, 0)
+# The job is idempotent (sent markers), so a short period only bounds how late a reminder can be.
+REMINDER_EVERY = 600
 # Bot API upload limits: photos 10 MB, other files 50 MB.
 PHOTO_LIMIT = 10 * 1024 * 1024
 
@@ -138,6 +140,10 @@ async def evening_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     await _broadcast(context, dialog.evening_reports)
 
 
+async def reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _broadcast(context, dialog.appointment_reminders)
+
+
 def build_application(token: str) -> Application:
     application = Application.builder().token(token).build()
     # Private chats only: in a group, other members would read a patient's data.
@@ -149,6 +155,7 @@ def build_application(token: str) -> Application:
     zone = ZoneInfo(settings.TIME_ZONE)
     application.job_queue.run_daily(morning_job, time=MORNING.replace(tzinfo=zone), name="doctor-morning")
     application.job_queue.run_daily(evening_job, time=EVENING.replace(tzinfo=zone), name="owner-evening")
+    application.job_queue.run_repeating(reminder_job, interval=REMINDER_EVERY, first=60, name="patient-reminders")
     return application
 
 

@@ -46,3 +46,28 @@ class BotAccount(BaseModel):
 
     def __str__(self):
         return f"BotAccount {self.pk}"
+
+
+class AppointmentReminder(BaseModel):
+    """A reminder already sent, so a restart or a second bot process never repeats one.
+
+    `for_start_at` is part of the key: a booking that was moved is a new visit
+    and gets its own reminders. The row is written before the send, so a failed
+    send is lost rather than retried every few minutes at a blocked chat.
+    """
+
+    class Kind(models.TextChoices):
+        DAY_BEFORE = "day_before", "Day before"
+        TWO_HOURS = "two_hours", "Two hours before"
+
+    appointment = models.ForeignKey("scheduling.Appointment", on_delete=models.CASCADE, related_name="+")
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    for_start_at = models.DateTimeField()
+
+    class Meta(BaseModel.Meta):
+        constraints = [
+            models.UniqueConstraint(fields=["appointment", "kind", "for_start_at"], name="uniq_appointment_reminder")
+        ]
+
+    def __str__(self):
+        return f"AppointmentReminder {self.pk}"

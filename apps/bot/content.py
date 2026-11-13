@@ -13,6 +13,7 @@ from django.db.models import Count, Q, Sum
 
 from apps.billing.balance import PROCEDURE_TOTAL, annotate_balance
 from apps.billing.models import Payment
+from apps.bot.models import AppointmentReminder
 from apps.clinical.models import Prescription
 from apps.dental.models import Procedure
 from apps.finance.periods import start_of
@@ -25,6 +26,8 @@ Status = Appointment.Status
 # Booked for today and not yet over: the doctor still has to see them.
 WAITING = (Status.SCHEDULED, Status.CONFIRMED, Status.ARRIVED, Status.IN_CHAIR)
 RECENT = 10
+# The evening before, patients are reminded from this local hour on.
+EVENING_FROM = 18
 ZERO = Decimal("0")
 
 
@@ -166,3 +169,42 @@ def owner_day(user, day: date | None = None) -> tuple[date | None, list[BranchDa
         return None, []
     day = day or today_in(clinics[0])
     return day, [branch_day(clinic, day) for clinic in clinics]
+
+
+# Appointment reminders
+
+REMIND_AHEAD = timedelta(hours=2)
+# Below this, a reminder would arrive when the patient is already on the way.
+REMIND_MIN = timedelta(minutes=30)
+REMINDABLE = (Status.SCHEDULED, Status.CONFIRMED)
+
+
+def reminder_candidates(now: datetime) -> list[tuple[Appointment, str]]:
+    """Visits that are due a reminder now, for patients who linked the bot.
+
+    "Day before" means the visit is on the next calendar day in the clinic's own
+    zone and it is already evening there. A visit booked less than
+    two hours ahead gets no two-hour reminder: the booking was the reminder.
+    """
+    kinds = AppointmentReminder.Kind
+    visits = (
+        Appointment.objects.filter(
+            status__in=REMINDABLE,
+            start_at__gt=now + REMIND_MIN,
+            start_at__lte=now + timedelta(hours=48),
+            patient__archived_at__isnull=True,
+            patient__bot_account__telegram_chat_id__isnull=False,
+        )
+        .select_related("clinic", "doctor__user", "patient__bot_account")
+        .order_by("start_at")
+    )
+    due = []
+    for visit in visits:
+        zone = zone_of(visit.clinic)
+        local_now = now.astimezone(zone)
+        tomorrow = local_now.date() + timedelta(days=1)
+        if visit.start_at.astimezone(zone).date() == tomorrow and local_now.hour >= EVENING_FROM:
+            due.append((visit, kinds.DAY_BEFORE))
+        if visit.start_at <= now + REMIND_AHEAD and visit.created_at <= visit.start_at - REMIND_AHEAD:
+            due.append((visit, kinds.TWO_HOURS))
+    return due
