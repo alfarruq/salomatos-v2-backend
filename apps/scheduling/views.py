@@ -63,6 +63,8 @@ class AppointmentViewSet(ClinicScopedModelViewSet):
     def _guard_patient(self, serializer):
         # A booking makes the patient visible to its doctor (`patient_filter`),
         # so booking a colleague's patient would open their whole record.
+        if "new_patient" in serializer.validated_data and not self.has_perm("patient:manage"):
+            raise PermissionDenied("You cannot register people.")
         patient = serializer.validated_data.get("patient")
         if patient is not None and (serializer.instance is None or patient != serializer.instance.patient):
             ensure_patient_visible(self.request, patient)

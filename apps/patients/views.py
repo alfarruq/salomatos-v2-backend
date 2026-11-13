@@ -25,6 +25,7 @@ class PatientFilter(filters.FilterSet):
     # Only non-PHI filters live in the query string; text search is POST /search/.
     primary_doctor = filters.UUIDFilter()
     archived = filters.BooleanFilter(field_name="archived_at", lookup_expr="isnull", exclude=True)
+    lead = filters.BooleanFilter(field_name="registered_at", lookup_expr="isnull")
 
     class Meta:
         model = Patient
@@ -50,6 +51,7 @@ class PatientViewSet(
         "search": "patient:view",
         "create": "patient:manage",
         "partial_update": "patient:manage",
+        "register": "patient:manage",
         "archive": "patient:archive",
         "restore": "patient:archive",
         "medical_history": "patient:view",
@@ -104,6 +106,9 @@ class PatientViewSet(
         queryset = super().filter_queryset(queryset)
         if self.action == "list" and "archived" not in self.request.query_params:
             queryset = queryset.filter(archived_at__isnull=True)
+        if self.action == "list" and "lead" not in self.request.query_params:
+            # Someone who only booked a visit is not a patient yet.
+            queryset = queryset.filter(registered_at__isnull=False)
         return queryset
 
     @extend_schema(request=PatientSearchSerializer, responses={200: PatientSerializer(many=True)})
@@ -124,9 +129,25 @@ class PatientViewSet(
         queryset = self.get_queryset().filter(matches)
         if not params.validated_data["include_archived"]:
             queryset = queryset.filter(archived_at__isnull=True)
+        if not params.validated_data["include_leads"]:
+            queryset = queryset.filter(registered_at__isnull=False)
         page = self.paginate_queryset(queryset.order_by("full_name"))
         record_many(request, AuditLog.Action.VIEW, page)
         return self.get_paginated_response(self.get_serializer(page, many=True).data)
+
+    @extend_schema(request=PatientSerializer, responses={200: PatientSerializer})
+    @action(detail=True, methods=["post"])
+    def register(self, request, pk=None):
+        """Turns a lead into a patient: the desk fills the patient form at the first procedure."""
+        patient = self.get_object()
+        serializer = self.get_serializer(patient, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self._guard_primary_doctor(serializer)
+        if patient.registered_at is None:
+            serializer.validated_data["registered_at"] = timezone.now()
+        serializer.save()
+        record(request, AuditLog.Action.UPDATE, patient)
+        return Response(serializer.data)
 
     @extend_schema(request=None, responses={200: PatientSerializer})
     @action(detail=True, methods=["post"])

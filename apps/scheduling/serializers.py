@@ -2,9 +2,11 @@ from datetime import timedelta
 
 from rest_framework import serializers
 
+from apps.audit.models import AuditLog
+from apps.audit.services import record
 from apps.catalog.models import Service
 from apps.patients.models import Patient
-from apps.patients.serializers import doctor_field
+from apps.patients.serializers import LeadSerializer, doctor_field
 from apps.scheduling.models import Appointment, Chair
 from apps.tenancy.fields import ClinicRelatedField
 
@@ -17,7 +19,11 @@ class ChairSerializer(serializers.ModelSerializer):
 
 class AppointmentSerializer(serializers.ModelSerializer):
     clinic_name = serializers.CharField(source="clinic.name", read_only=True)
-    patient = ClinicRelatedField(queryset=Patient.objects.all(), extra_filter={"archived_at__isnull": True})
+    patient = ClinicRelatedField(
+        queryset=Patient.objects.all(), extra_filter={"archived_at__isnull": True}, required=False
+    )
+    # Someone booking for the first time: stored as a lead, kept out of the patient list.
+    new_patient = LeadSerializer(write_only=True, required=False)
     doctor = doctor_field()
     chair = ClinicRelatedField(
         queryset=Chair.objects.all(), extra_filter={"is_active": True}, required=False, allow_null=True
@@ -35,6 +41,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "clinic_name",
             "patient",
             "patient_name",
+            "new_patient",
             "doctor",
             "doctor_name",
             "chair",
@@ -48,6 +55,12 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         instance = self.instance
+        if "new_patient" in attrs and (instance is not None or "patient" in attrs):
+            raise serializers.ValidationError(
+                {"new_patient": "Send either an existing patient or a new one, on create only."}, code="invalid"
+            )
+        if instance is None and "patient" not in attrs and "new_patient" not in attrs:
+            raise serializers.ValidationError({"patient": "This field is required."}, code="required")
         start = attrs.get("start_at", getattr(instance, "start_at", None))
         end = attrs.get("end_at", getattr(instance, "end_at", None))
         service = attrs.get("service", getattr(instance, "service", None))
@@ -62,6 +75,14 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if status in Appointment.BLOCKING:
             self._check_conflicts(attrs, start, end)
         return attrs
+
+    def create(self, validated_data):
+        lead = validated_data.pop("new_patient", None)
+        if lead is not None:
+            request = self.context["request"]
+            validated_data["patient"] = Patient.objects.create(clinic=request.clinic, registered_at=None, **lead)
+            record(request, AuditLog.Action.CREATE, validated_data["patient"])
+        return super().create(validated_data)
 
     def _check_conflicts(self, attrs, start, end):
         instance = self.instance

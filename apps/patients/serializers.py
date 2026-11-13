@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.core.validators import validate_phone
 from apps.patients.models import MedicalHistory, Patient
 from apps.tenancy.fields import ClinicRelatedField
 from apps.tenancy.models import Membership
@@ -19,6 +20,7 @@ class PatientSerializer(serializers.ModelSerializer):
     primary_doctor_name = serializers.CharField(source="primary_doctor.user.full_name", read_only=True, default=None)
     # Charged minus paid; null when the caller may not see money or the row was not annotated.
     debt = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True, allow_null=True, default=None)
+    is_lead = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Patient
@@ -36,9 +38,11 @@ class PatientSerializer(serializers.ModelSerializer):
             "primary_doctor_name",
             "archived_at",
             "created_at",
+            "registered_at",
+            "is_lead",
             "debt",
         ]
-        read_only_fields = ["id", "clinic", "archived_at", "created_at"]
+        read_only_fields = ["id", "clinic", "archived_at", "created_at", "registered_at"]
 
 
 class PatientSearchSerializer(serializers.Serializer):
@@ -46,6 +50,15 @@ class PatientSearchSerializer(serializers.Serializer):
 
     query = serializers.CharField(min_length=2, max_length=100)
     include_archived = serializers.BooleanField(default=False)
+    # The booking dialog looks for leads too, so a returning caller is not entered twice.
+    include_leads = serializers.BooleanField(default=False)
+
+
+class LeadSerializer(serializers.Serializer):
+    """The two things the desk asks someone who is only booking a visit."""
+
+    full_name = serializers.CharField(max_length=255)
+    phone_number = serializers.CharField(max_length=16, validators=[validate_phone])
 
 
 class MedicalHistorySerializer(serializers.ModelSerializer):
