@@ -320,6 +320,7 @@ class Importer:
                 birth_date=row["birth_date"],
                 address=row["address"] or "",
                 primary_doctor=self.doctors.get(row["doctor_id"]) if row["doctor_id"] in self.doctors else None,
+                registered_at=row["created_at"] or timezone.now(),
             )
             self._keep_created_at(Patient, patient, row["created_at"])
             self.patients[row["id"]] = patient

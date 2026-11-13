@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 from apps.core.models import BaseModel
 from apps.core.validators import validate_phone
@@ -10,6 +11,11 @@ class Patient(BaseModel):
     Patients are archived, never deleted, because the medical record has to
     outlive the relationship with the clinic. Clinical rows point here with
     PROTECT for the same reason.
+
+    A person who only booked a visit is a *lead*: a row with a name and a phone
+    (so the booking and the bot reminder have someone to point at) and
+    `registered_at` empty. Leads stay out of the patient list until the first
+    procedure, when the front desk fills the patient form and registers them.
     """
 
     class Gender(models.TextChoices):
@@ -31,12 +37,18 @@ class Patient(BaseModel):
         related_name="primary_patients",
     )
     archived_at = models.DateTimeField(null=True, blank=True)
+    # Null for a lead. Statistics count a new patient from this moment, not from the booking.
+    registered_at = models.DateTimeField(null=True, blank=True, default=timezone.now)
 
     class Meta(BaseModel.Meta):
         indexes = [
             models.Index(fields=["clinic", "full_name"]),
             models.Index(fields=["clinic", "phone_number"]),
         ]
+
+    @property
+    def is_lead(self) -> bool:
+        return self.registered_at is None
 
     def __str__(self):
         # Kept free of PHI: __str__ ends up in logs and error reports.

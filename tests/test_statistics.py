@@ -26,7 +26,9 @@ def visit(world, at, *, status=Status.SCHEDULED, doctor=None, patient=None):
 
 
 def registered(patient, at):
-    Patient.objects.filter(pk=patient.pk).update(created_at=datetime.fromisoformat(at))
+    Patient.objects.filter(pk=patient.pk).update(
+        created_at=datetime.fromisoformat(at), registered_at=datetime.fromisoformat(at)
+    )
 
 
 @pytest.fixture

@@ -55,8 +55,8 @@ def _totals(clinic_ids, period: DateRange, zone, doctor=None) -> dict:
         .filter(status=Status.COMPLETED)
         .values_list("patient_id", flat=True)
     )
-    returning = Patient.objects.filter(pk__in=seen, created_at__lt=start).count()
-    new_patients = Patient.objects.filter(clinic_id__in=clinic_ids, created_at__gte=start, created_at__lt=end)
+    returning = Patient.objects.filter(pk__in=seen, registered_at__lt=start).count()
+    new_patients = Patient.objects.filter(clinic_id__in=clinic_ids, registered_at__gte=start, registered_at__lt=end)
     if doctor is not None:
         # A doctor's new patients are the ones registered to them.
         new_patients = new_patients.filter(primary_doctor=doctor)
