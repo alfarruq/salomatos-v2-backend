@@ -40,6 +40,9 @@ APPOINTMENT_LENGTH = timedelta(minutes=30)
 # A treatment has a date and no time; midday keeps it on the same day in any report.
 DEFAULT_TIME = time(12, 0)
 PAYMENT_NOTE = "v1"
+# Stand-ins for rows whose patient or service was deleted in v1 (the link became NULL).
+DELETED_PATIENT_NAME = "O'chirilgan bemor (v1)"
+DELETED_SERVICE_NAME = "O'chirilgan xizmat (v1)"
 SMALLINT_MAX = 32767
 
 
@@ -173,6 +176,8 @@ class Importer:
         self.prefix = username_prefix
         self.report = Report()
         self.audit: list[AuditLog] = []
+        self._placeholder_patient: Patient | None = None
+        self._placeholder_service: Service | None = None
 
     # -- entry point ---------------------------------------------------------
 
@@ -340,12 +345,16 @@ class Importer:
             source_paid += row["total_paid"]
             patient = self.patients.get(row["patient_id"])
             service = self.services.get(row["treatment_type_id"])
+            if patient is None and row["patient_id"] is None:
+                # v1 nulled the link when a patient was deleted; the money still belongs in the books.
+                patient = self._deleted_patient()
+                self.report.issues["treatment_patient_deleted_kept_on_placeholder"] += 1
             if patient is None:
-                self.report.issues["treatment_without_patient_skipped"] += 1
+                self.report.issues["treatment_patient_elsewhere_skipped"] += 1
                 continue
             if service is None:
-                self.report.issues["treatment_without_service_skipped"] += 1
-                continue
+                service = self._deleted_service()
+                self.report.issues["treatment_service_deleted_kept_on_placeholder"] += 1
             if row["tooth_number"] is not None and _tooth(row["tooth_number"]) is None:
                 self.report.issues["treatment_tooth_not_fdi_left_empty"] += 1
             doctor = self._doctor(row["doctor_id"], "treatment")
@@ -461,6 +470,23 @@ class Importer:
             self.report.counts["prescriptions"] += 1
 
     # -- helpers -------------------------------------------------------------
+
+    def _deleted_patient(self) -> Patient:
+        if self._placeholder_patient is None:
+            # Archived, so it stays out of every patient list and search.
+            self._placeholder_patient = Patient.objects.create(
+                clinic=self.clinic, full_name=DELETED_PATIENT_NAME, phone_number="", archived_at=timezone.now()
+            )
+            self._audit(self._placeholder_patient)
+        return self._placeholder_patient
+
+    def _deleted_service(self) -> Service:
+        if self._placeholder_service is None:
+            # Inactive, so nobody can pick it for new work.
+            self._placeholder_service = Service.objects.create(
+                clinic=self.clinic, name=DELETED_SERVICE_NAME, price=Decimal(0), is_active=False
+            )
+        return self._placeholder_service
 
     @staticmethod
     def _keep_created_at(model, obj, created_at):
