@@ -36,9 +36,12 @@ class ClinicBriefSerializer(serializers.ModelSerializer):
 class SpecialtySerializer(serializers.ModelSerializer):
     class Meta:
         model = Specialty
-        fields = ["id", "name"]
+        fields = ["id", "name", "is_dental"]
+        read_only_fields = ["is_dental"]
 
     def validate_name(self, value):
+        if self.instance is not None and self.instance.is_dental:
+            raise serializers.ValidationError("The dental specialty cannot be renamed.", code="protected")
         clinic = self.context["request"].clinic
         qs = Specialty.objects.filter(clinic=clinic, name__iexact=value)
         if self.instance:
@@ -86,6 +89,7 @@ class StaffSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, style={"input_type": "password"})
     specialty = ClinicRelatedField(queryset=Specialty.objects.all(), required=False, allow_null=True)
     specialty_name = serializers.CharField(source="specialty.name", read_only=True, default=None)
+    specialty_is_dental = serializers.BooleanField(source="specialty.is_dental", read_only=True, default=False)
     compensation = PayTermsSerializer(
         write_only=True,
         required=False,
@@ -109,6 +113,7 @@ class StaffSerializer(serializers.ModelSerializer):
             "is_active",
             "specialty",
             "specialty_name",
+            "specialty_is_dental",
             "experience_years",
             "biography",
             "compensation",

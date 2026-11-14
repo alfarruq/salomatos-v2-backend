@@ -44,10 +44,18 @@ class Specialty(BaseModel):
 
     clinic = models.ForeignKey(Clinic, on_delete=models.CASCADE, related_name="specialties")
     name = models.CharField(max_length=255)
+    # The dentist specialty: every clinic has exactly one, created with the clinic and
+    # never renamed or deleted, so the treatment form can rely on it for the tooth chart.
+    is_dental = models.BooleanField(default=False, editable=False)
 
     class Meta(BaseModel.Meta):
-        ordering = ["name"]
-        constraints = [models.UniqueConstraint(fields=["clinic", "name"], name="uniq_specialty_per_clinic")]
+        ordering = ["-is_dental", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["clinic", "name"], name="uniq_specialty_per_clinic"),
+            models.UniqueConstraint(
+                fields=["clinic"], condition=models.Q(is_dental=True), name="uniq_dental_specialty_per_clinic"
+            ),
+        ]
 
     def __str__(self):
         return self.name

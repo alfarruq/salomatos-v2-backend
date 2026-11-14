@@ -1,7 +1,7 @@
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from apps.accounts.sessions import revoke_all_sessions
@@ -44,6 +44,11 @@ class SpecialtyViewSet(ClinicScopedModelViewSet):
         "partial_update": "specialty:manage",
         "destroy": "specialty:manage",
     }
+
+    def perform_destroy(self, instance):
+        if instance.is_dental:
+            raise ValidationError({"detail": "The dental specialty cannot be deleted."}, code="protected")
+        super().perform_destroy(instance)
 
 
 class StaffViewSet(ClinicScopedModelViewSet):
