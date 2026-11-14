@@ -18,15 +18,11 @@ class Patient(BaseModel):
     procedure, when the front desk fills the patient form and registers them.
     """
 
-    class Gender(models.TextChoices):
-        MALE = "male", "Male"
-        FEMALE = "female", "Female"
-
     clinic = models.ForeignKey("tenancy.Clinic", on_delete=models.PROTECT, related_name="patients")
     full_name = models.CharField(max_length=255)
     phone_number = models.CharField(max_length=16, validators=[validate_phone])
     birth_date = models.DateField(null=True, blank=True)
-    gender = models.CharField(max_length=8, choices=Gender.choices, blank=True)
+    workplace = models.CharField(max_length=255, blank=True)
     address = models.CharField(max_length=255, blank=True)
     notes = models.TextField(blank=True)
     primary_doctor = models.ForeignKey(

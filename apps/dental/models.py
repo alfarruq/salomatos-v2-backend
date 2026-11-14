@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MinValueValidator
 from django.db import models
 
 from apps.core.models import BaseModel
@@ -62,17 +62,13 @@ class PricedLine(models.Model):
 
     quantity = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)])
     unit_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
-    discount_percent = models.DecimalField(
-        max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0), MaxValueValidator(100)]
-    )
 
     class Meta:
         abstract = True
 
     @property
     def total(self) -> Decimal:
-        gross = self.unit_price * self.quantity
-        return (gross * (Decimal(100) - self.discount_percent) / Decimal(100)).quantize(Decimal("0.01"))
+        return (self.unit_price * self.quantity).quantize(Decimal("0.01"))
 
 
 class TreatmentPlan(BaseModel):

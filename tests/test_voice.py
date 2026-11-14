@@ -52,7 +52,7 @@ def test_patient_draft_cleans_values(world, model):
             "full_name": "Aliyev Vali",
             "phone_number": "90 123 45 67",
             "birth_date": "1990-05-04",
-            "gender": "male",
+            "workplace": "Chilonzor bozori",
             "address": "Toshkent",
             "notes": "Tish og'rig'i",
         }
@@ -64,7 +64,7 @@ def test_patient_draft_cleans_values(world, model):
         "full_name": "Aliyev Vali",
         "phone_number": "+998901234567",
         "birth_date": "1990-05-04",
-        "gender": "male",
+        "workplace": "Chilonzor bozori",
         "address": "Toshkent",
     }
     assert body["notes"] == "Tish og'rig'i"
@@ -74,12 +74,19 @@ def test_patient_draft_cleans_values(world, model):
 
 def test_bad_values_are_dropped_not_guessed(world, model):
     model(
-        {"full_name": "X", "phone_number": "12", "birth_date": "2999-01-01", "gender": "?", "address": "", "notes": ""}
+        {
+            "full_name": "X",
+            "phone_number": "12",
+            "birth_date": "2999-01-01",
+            "workplace": "",
+            "address": "",
+            "notes": "",
+        }
     )
     body = world.client(world.doctor_a).post(URL, {"form": "patient", "text": "abc"}, format="json").json()
     assert body["patient_fields"]["phone_number"] == ""
     assert body["patient_fields"]["birth_date"] is None
-    assert body["patient_fields"]["gender"] == ""
+    assert body["patient_fields"]["workplace"] == ""
 
 
 def test_procedure_matches_price_list_and_visible_patient(world, model):
@@ -198,7 +205,7 @@ def test_provider_failure_is_generic(world, monkeypatch, settings):
 
 
 def test_monthly_limit(world, model, settings):
-    model({"full_name": "", "phone_number": "", "birth_date": None, "gender": "", "address": "", "notes": ""})
+    model({"full_name": "", "phone_number": "", "birth_date": None, "workplace": "", "address": "", "notes": ""})
     settings.VOICE_MONTHLY_LIMIT = 1
     api = world.client(world.doctor_a)
     assert api.post(URL, {"form": "patient", "text": "abc"}, format="json").status_code == 200
@@ -215,7 +222,7 @@ def test_needs_one_branch(world, model):
 
 
 def test_needs_the_paid_add_on(world, model):
-    model({"full_name": "", "phone_number": "", "birth_date": None, "gender": "", "address": "", "notes": ""})
+    model({"full_name": "", "phone_number": "", "birth_date": None, "workplace": "", "address": "", "notes": ""})
     api = world.client(world.doctor_a)
     PlatformPayment.objects.filter(organization=world.org).update(covers_until=date.today() - timedelta(days=1))
     status = api.get("/api/v1/voice/status/").json()

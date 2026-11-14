@@ -65,7 +65,7 @@ PATIENT_SCHEMA = _object(
         "full_name": {"type": "string", "description": "Patient's full name, as dictated."},
         "phone_number": {"type": "string", "description": "Digits only, as dictated, e.g. 901234567."},
         "birth_date": {**NULLABLE_STRING, "description": "YYYY-MM-DD, only when the full date is said."},
-        "gender": {"enum": ["male", "female", ""]},
+        "workplace": {"type": "string"},
         "address": {"type": "string"},
         "notes": {"type": "string", "description": "Complaints or other remarks."},
     }
@@ -121,7 +121,7 @@ FORMS: dict[str, FormSpec] = {
     "patient": FormSpec(
         "patient:manage",
         PATIENT_SCHEMA,
-        "The form registers a new patient. Gender only when said or obvious from the words used.\n",
+        "The form registers a new patient. Workplace only when said.\n",
         needs_patient=False,
     ),
     "procedure": FormSpec(
@@ -229,7 +229,7 @@ def build_draft(request, form: str, text: str, patient: Patient | None) -> tuple
             "full_name": _clean(data.get("full_name"), 255),
             "phone_number": _phone(data.get("phone_number")),
             "birth_date": _birth_date(data.get("birth_date")),
-            "gender": data.get("gender") if data.get("gender") in ("male", "female") else "",
+            "workplace": _clean(data.get("workplace"), 255),
             "address": _clean(data.get("address"), 255),
         }
         return draft, extraction

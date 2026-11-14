@@ -4,6 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.billing.models import Payment
 from apps.catalog.models import Service
 from apps.dental.models import SURFACES, PlanItem, Procedure, ToothEvent, ToothRecord, TreatmentPlan
 from apps.patients.models import Patient
@@ -73,7 +74,6 @@ class PlanItemSerializer(serializers.ModelSerializer):
             "phase",
             "quantity",
             "unit_price",
-            "discount_percent",
             "total",
             "status",
             "notes",
@@ -159,6 +159,13 @@ class ProcedureSerializer(serializers.ModelSerializer):
     surfaces = serializers.JSONField(required=False, validators=[validate_surfaces])
     performed_at = serializers.DateTimeField(required=False)
     total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    # Money taken at the chair when the line is entered; it becomes a Payment, not a column.
+    paid_amount = serializers.DecimalField(
+        max_digits=12, decimal_places=2, min_value=Decimal("0"), required=False, write_only=True
+    )
+    payment_method = serializers.ChoiceField(
+        choices=Payment.Method.choices, default=Payment.Method.CASH, write_only=True
+    )
 
     class Meta:
         model = Procedure
@@ -178,8 +185,9 @@ class ProcedureSerializer(serializers.ModelSerializer):
             "surfaces",
             "quantity",
             "unit_price",
-            "discount_percent",
             "total",
+            "paid_amount",
+            "payment_method",
             "performed_at",
             "status",
             "completed_at",
@@ -214,12 +222,15 @@ class ProcedureSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"appointment": "This appointment is another patient's."}, code="invalid")
         if plan_item is not None:
             # Performing a planned item charges what the patient agreed to.
-            for field in ("unit_price", "discount_percent", "quantity", "tooth", "surfaces"):
+            for field in ("unit_price", "quantity", "tooth", "surfaces"):
                 if attrs.get(field) in (None, []) or field not in self.initial_data:
                     attrs[field] = getattr(plan_item, field)
             attrs["service"] = plan_item.service
         elif attrs.get("unit_price") is None:
             attrs["unit_price"] = attrs["service"].price
+        paid_amount = attrs.get("paid_amount", Decimal("0"))
+        if paid_amount > attrs["unit_price"] * attrs.get("quantity", 1):
+            raise serializers.ValidationError({"paid_amount": "More than the price of the treatment."}, code="invalid")
         attrs.setdefault("performed_at", timezone.now())
         if attrs.get("status", Procedure.Status.COMPLETED) == Procedure.Status.COMPLETED:
             attrs["completed_at"] = attrs["performed_at"]

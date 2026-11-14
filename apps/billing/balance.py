@@ -9,10 +9,8 @@ from apps.dental.models import Procedure
 ZERO = Value(Decimal("0.00"), output_field=DecimalField(max_digits=14, decimal_places=2))
 MONEY = DecimalField(max_digits=14, decimal_places=2)
 
-# unit_price * quantity * (100 - discount) / 100, the same formula as PricedLine.total.
-PROCEDURE_TOTAL = ExpressionWrapper(
-    F("unit_price") * F("quantity") * (Value(100) - F("discount_percent")) / Value(100), output_field=MONEY
-)
+# The same formula as PricedLine.total.
+PROCEDURE_TOTAL = ExpressionWrapper(F("unit_price") * F("quantity"), output_field=MONEY)
 
 
 def _sum_subquery(queryset, expression):
