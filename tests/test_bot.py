@@ -63,6 +63,12 @@ def test_admin_reads_a_patients_login_and_it_is_audited(world):
     assert AuditLog.objects.filter(target_id=account.pk, action=AuditLog.Action.VIEW).exists()
 
 
+def test_owner_reads_a_patients_login_in_all_branches_mode_but_cannot_reset(world):
+    api = world.client(world.owner, organization=world.org)
+    assert api.get(f"/api/v1/patients/{world.patient_a.pk}/bot-access/").status_code == 200
+    assert api.post(f"/api/v1/patients/{world.patient_a.pk}/bot-access/reset/").status_code == 400
+
+
 def test_doctor_reads_only_own_patients_login(world):
     api = world.client(world.doctor_a)
     assert api.get(f"/api/v1/patients/{world.patient_a.pk}/bot-access/").status_code == 200

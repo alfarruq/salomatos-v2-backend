@@ -44,7 +44,7 @@ class PatientViewSet(
     serializer_class = PatientSerializer
     filterset_class = PatientFilter
     http_method_names = ["get", "post", "patch", "head", "options"]
-    organization_actions = frozenset({"list", "retrieve", "search", "medical_history"})
+    organization_actions = frozenset({"list", "retrieve", "search", "medical_history", "bot_access"})
     required_permissions = {
         "list": "patient:view",
         "retrieve": "patient:view",
