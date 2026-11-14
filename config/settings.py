@@ -176,6 +176,7 @@ SPECTACULAR_SETTINGS = {
         "PlatformPaymentKindEnum": "apps.saas.models.PlatformPayment.Kind",
         "AttachmentKindEnum": "apps.imaging.models.Attachment.Kind",
         "BotAccountKindEnum": "apps.bot.models.BotAccount.Kind",
+        "PaymentMethodEnum": "apps.billing.models.Payment.Method",
     },
 }
 

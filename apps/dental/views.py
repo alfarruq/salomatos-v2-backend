@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import transaction
 from django.utils import timezone
 from django_filters import rest_framework as filters
@@ -9,6 +11,7 @@ from rest_framework.response import Response
 
 from apps.audit.models import AuditLog
 from apps.audit.services import record
+from apps.billing.models import Payment
 from apps.core.pagination import DefaultPagination
 from apps.dental.models import PlanItem, Procedure, ToothEvent, ToothRecord, TreatmentPlan
 from apps.dental.serializers import (
@@ -264,7 +267,20 @@ class ProcedureViewSet(
         self.assign_doctor(serializer)
         if serializer.validated_data.get("status") != Procedure.Status.IN_PROGRESS:
             serializer.validated_data["completed_by"] = self.request.membership
+        paid_amount = serializer.validated_data.pop("paid_amount", Decimal("0"))
+        method = serializer.validated_data.pop("payment_method")
         super().perform_create(serializer)
+        if paid_amount > 0:
+            # Same transaction as the charge: a half-saved visit would leave the books wrong.
+            payment = Payment.objects.create(
+                clinic=self.request.clinic,
+                patient=serializer.instance.patient,
+                amount=paid_amount,
+                method=method,
+                paid_at=timezone.now(),
+                received_by=self.request.membership,
+            )
+            record(self.request, AuditLog.Action.CREATE, payment)
         if serializer.instance.status == Procedure.Status.COMPLETED:
             self._close_plan_item(serializer.instance)
 

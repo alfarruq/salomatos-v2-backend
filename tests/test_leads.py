@@ -139,7 +139,7 @@ def test_register_turns_lead_into_patient(world, lead, service):
     client = world.client(world.admin_a)
     response = client.post(
         f"/api/v1/patients/{lead.pk}/register/",
-        {"birth_date": "1990-05-01", "gender": "male", "address": "Tashkent"},
+        {"birth_date": "1990-05-01", "workplace": "Bank", "address": "Tashkent"},
         format="json",
     )
     assert response.status_code == 200, response.json()

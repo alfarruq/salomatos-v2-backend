@@ -29,7 +29,7 @@ class PatientFilter(filters.FilterSet):
 
     class Meta:
         model = Patient
-        fields = ["primary_doctor", "gender"]
+        fields = ["primary_doctor"]
 
 
 class PatientViewSet(

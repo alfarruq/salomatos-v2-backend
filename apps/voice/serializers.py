@@ -24,7 +24,7 @@ class DraftPatientFieldsSerializer(serializers.Serializer):
     full_name = serializers.CharField(allow_blank=True)
     phone_number = serializers.CharField(allow_blank=True)
     birth_date = serializers.DateField(allow_null=True)
-    gender = serializers.ChoiceField(choices=[*Patient.Gender.choices, ("", "")])
+    workplace = serializers.CharField(allow_blank=True)
     address = serializers.CharField(allow_blank=True)
 
 

@@ -2,6 +2,7 @@ from decimal import Decimal
 
 import pytest
 
+from apps.billing.models import Payment
 from apps.catalog.models import Service
 from apps.dental.models import PlanItem, ToothEvent, TreatmentPlan
 
@@ -18,7 +19,7 @@ def services(world):
 def make_plan(client, world, services, items=None):
     items = items or [
         {"service": str(services["filling"].pk), "tooth": 36, "surfaces": ["O", "D"]},
-        {"service": str(services["crown"].pk), "tooth": 46, "discount_percent": "10"},
+        {"service": str(services["crown"].pk), "tooth": 46},
     ]
     return client.post(
         "/api/v1/treatment-plans/",
@@ -63,13 +64,13 @@ def test_chart_of_hidden_patient_is_closed(world):
 # Treatment plans
 
 
-def test_plan_prices_come_from_service_and_total_applies_discount(world, services):
+def test_plan_prices_come_from_service_and_total_is_the_sum(world, services):
     response = make_plan(world.client(world.doctor_a), world, services)
     assert response.status_code == 201, response.json()
     body = response.json()
     assert body["doctor"] == str(world.doctor_a.pk)
     assert body["status"] == "draft"
-    assert body["total"] == "1650000.00"  # 300000 + 1500000 * 0.9
+    assert body["total"] == "1800000.00"  # 300000 + 1500000
 
 
 def test_plan_rejects_foreign_service(world, services):
@@ -114,7 +115,7 @@ def test_performing_every_item_completes_the_plan(world, services):
     plan.refresh_from_db()
     assert plan.status == TreatmentPlan.Status.COMPLETED
     totals = sorted(row["total"] for row in client.get("/api/v1/procedures/").json()["results"])
-    assert totals == ["1350000.00", "300000.00"]
+    assert totals == ["1500000.00", "300000.00"]
 
 
 def test_plan_item_cannot_be_done_twice_or_for_another_patient(world, services):
@@ -257,3 +258,43 @@ def test_doctor_cannot_complete_a_colleagues_procedure(world, services):
     url = f"/api/v1/procedures/{created['id']}/complete/"
     assert world.client(world.doctor_a).post(url).status_code in (403, 404)
     assert world.client(world.doctor_a2).post(url).status_code == 200
+
+
+def test_paid_amount_becomes_a_payment_and_lowers_the_debt(world, services):
+    doctor = world.client(world.doctor_a)
+    base = {"patient": str(world.patient_a.pk), "service": str(services["crown"].pk), "tooth": 46}
+    response = doctor.post("/api/v1/procedures/", {**base, "paid_amount": "500000"}, format="json")
+    assert response.status_code == 201, response.json()
+    assert "paid_amount" not in response.json()
+    payment = Payment.objects.get()
+    assert (payment.amount, payment.method, payment.received_by) == (500000, "cash", world.doctor_a)
+    balance = world.client(world.admin_a).get(f"/api/v1/balances/{world.patient_a.pk}/").json()
+    assert balance["debt"] == "1000000.00"
+    # A second line paid in full leaves the first line's remainder as the only debt.
+    doctor.post(
+        "/api/v1/procedures/", {**base, "tooth": 47, "paid_amount": "1500000", "payment_method": "card"}, format="json"
+    )
+    assert world.client(world.admin_a).get(f"/api/v1/balances/{world.patient_a.pk}/").json()["debt"] == "1000000.00"
+
+
+def test_paid_amount_cannot_exceed_the_price(world, services):
+    response = world.client(world.doctor_a).post(
+        "/api/v1/procedures/",
+        {"patient": str(world.patient_a.pk), "service": str(services["crown"].pk), "paid_amount": "1500000.01"},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert not Payment.objects.exists()
+
+
+def test_doctor_cannot_record_a_procedure_for_a_colleague(world, services):
+    response = world.client(world.doctor_a).post(
+        "/api/v1/procedures/",
+        {
+            "patient": str(world.patient_a.pk),
+            "service": str(services["crown"].pk),
+            "doctor": str(world.doctor_a2.pk),
+        },
+        format="json",
+    )
+    assert response.status_code == 403
