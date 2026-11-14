@@ -1,6 +1,6 @@
 import re
 
-from django.db.models import Q
+from django.db.models import OuterRef, Q, Subquery
 from django.utils import timezone
 from django_filters import rest_framework as filters
 from drf_spectacular.utils import extend_schema
@@ -18,6 +18,7 @@ from apps.bot.views import respond_with_access
 from apps.patients.access import patient_filter
 from apps.patients.models import MedicalHistory, Patient
 from apps.patients.serializers import MedicalHistorySerializer, PatientSearchSerializer, PatientSerializer
+from apps.scheduling.models import Appointment
 from apps.tenancy.viewsets import ClinicScopedMixin
 
 
@@ -129,7 +130,10 @@ class PatientViewSet(
         queryset = self.get_queryset().filter(matches)
         if not params.validated_data["include_archived"]:
             queryset = queryset.filter(archived_at__isnull=True)
-        if not params.validated_data["include_leads"]:
+        if params.validated_data["only_leads"]:
+            last = Appointment.objects.filter(patient=OuterRef("pk")).order_by("-start_at").values("start_at")[:1]
+            queryset = queryset.filter(registered_at__isnull=True).annotate(last_appointment_at=Subquery(last))
+        elif not params.validated_data["include_leads"]:
             queryset = queryset.filter(registered_at__isnull=False)
         page = self.paginate_queryset(queryset.order_by("full_name"))
         record_many(request, AuditLog.Action.VIEW, page)
