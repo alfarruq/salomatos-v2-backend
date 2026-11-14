@@ -213,3 +213,31 @@ def test_leads_are_not_counted_as_new_patients(world, lead):
     assert response.status_code == 200, response.json()
     # patient_a and patient_a2 from the fixture, not the lead.
     assert response.json()["totals"]["new_patients"] == 2
+
+
+def test_only_leads_search_offers_booked_people_with_their_last_visit(world, lead):
+    client = world.client(world.admin_a)
+    # Both the lead and patient_a share a name prefix; only the lead comes back.
+    Patient.objects.filter(pk=lead.pk).update(full_name="Patient Lead")
+    response = client.post("/api/v1/patients/search/", {"query": "Patient", "only_leads": True}, format="json")
+    assert response.status_code == 200
+    assert ids(response) == {str(lead.pk)}
+    row = response.json()["results"][0]
+    assert row["is_lead"] is True
+    assert row["last_appointment_at"] is not None
+
+
+def test_only_leads_search_by_phone_and_isolation(world, lead):
+    found = world.client(world.admin_a).post(
+        "/api/v1/patients/search/", {"query": "1112233", "only_leads": True}, format="json"
+    )
+    assert ids(found) == {str(lead.pk)}
+    other = world.client(world.other_admin).post(
+        "/api/v1/patients/search/", {"query": "1112233", "only_leads": True}, format="json"
+    )
+    assert ids(other) == set()
+    # A doctor not booked with the lead does not see them.
+    colleague = world.client(world.doctor_a2).post(
+        "/api/v1/patients/search/", {"query": "1112233", "only_leads": True}, format="json"
+    )
+    assert ids(colleague) == set()

@@ -21,6 +21,8 @@ class PatientSerializer(serializers.ModelSerializer):
     # Charged minus paid; null when the caller may not see money or the row was not annotated.
     debt = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True, allow_null=True, default=None)
     is_lead = serializers.BooleanField(read_only=True)
+    # Only on a leads-only search, to tell two people with the same name apart.
+    last_appointment_at = serializers.DateTimeField(read_only=True, allow_null=True, default=None)
 
     class Meta:
         model = Patient
@@ -40,6 +42,7 @@ class PatientSerializer(serializers.ModelSerializer):
             "created_at",
             "registered_at",
             "is_lead",
+            "last_appointment_at",
             "debt",
         ]
         read_only_fields = ["id", "clinic", "archived_at", "created_at", "registered_at"]
@@ -52,6 +55,8 @@ class PatientSearchSerializer(serializers.Serializer):
     include_archived = serializers.BooleanField(default=False)
     # The booking dialog looks for leads too, so a returning caller is not entered twice.
     include_leads = serializers.BooleanField(default=False)
+    # The "new patient" dialog offers only leads, so a booked person is registered, not entered twice.
+    only_leads = serializers.BooleanField(default=False)
 
 
 class LeadSerializer(serializers.Serializer):
