@@ -34,6 +34,7 @@ from apps.saas import credentials, passwords
 from apps.saas.models import Contract
 from apps.scheduling.models import Appointment
 from apps.tenancy.models import Clinic, Membership, Organization, Specialty
+from apps.tenancy.specialties import ensure_dental_specialty, looks_dental
 
 # v1 stored a booking time only; every slot was half an hour.
 APPOINTMENT_LENGTH = timedelta(minutes=30)
@@ -261,7 +262,12 @@ class Importer:
         for row in self.data["doctor_types"]:
             key = row["name"].strip()
             if key not in by_name:
-                by_name[key] = Specialty.objects.create(clinic=self.clinic, name=key)
+                # v1 dentists join the clinic's built-in dental specialty, not a second one.
+                by_name[key] = (
+                    ensure_dental_specialty(self.clinic)
+                    if looks_dental(key)
+                    else Specialty.objects.create(clinic=self.clinic, name=key)
+                )
             self.specialties[row["id"]] = by_name[key]
         self.report.counts["specialties"] = len(by_name)
 

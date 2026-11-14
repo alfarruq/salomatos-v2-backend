@@ -21,6 +21,7 @@ from apps.catalog.models import Service, ServiceCategory
 from apps.tenancy.models import Clinic, Membership, Specialty
 from apps.tenancy.moves import MAX_PATIENTS
 from apps.tenancy.moves import move_patients as move_between_branches
+from apps.tenancy.specialties import ensure_dental_specialty
 from apps.tenancy.viewsets import ClinicScopedMixin
 
 
@@ -82,9 +83,13 @@ class BranchSerializer(serializers.ModelSerializer):
 
 def copy_catalog(source: Clinic, target: Clinic) -> None:
     """Copies specialties and the price list. Staff, chairs and patients are never copied."""
+    # The target already has its own dental specialty (made with the branch).
     specialties = {}
     for row in Specialty.objects.filter(clinic=source):
-        specialties[row.pk] = Specialty.objects.create(clinic=target, name=row.name)
+        if row.is_dental:
+            specialties[row.pk] = ensure_dental_specialty(target)
+        else:
+            specialties[row.pk] = Specialty.objects.create(clinic=target, name=row.name)
     categories = {}
     for row in ServiceCategory.objects.filter(clinic=source):
         categories[row.pk] = ServiceCategory.objects.create(clinic=target, name=row.name)

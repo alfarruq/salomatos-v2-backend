@@ -9,6 +9,7 @@ from django.dispatch import receiver
 
 from apps.tenancy.models import Clinic, Membership, Organization
 from apps.tenancy.services import ensure_owner_membership
+from apps.tenancy.specialties import ensure_dental_specialty
 
 
 @receiver(post_save, sender=Clinic)
@@ -16,6 +17,12 @@ def give_owners_new_branch(sender, instance, created, raw=False, **kwargs):
     if created and not raw:
         for user in instance.organization.owners.all():
             ensure_owner_membership(instance, user)
+
+
+@receiver(post_save, sender=Clinic)
+def give_new_branch_dental_specialty(sender, instance, created, raw=False, **kwargs):
+    if created and not raw:
+        ensure_dental_specialty(instance)
 
 
 @receiver(m2m_changed, sender=Organization.owners.through)
