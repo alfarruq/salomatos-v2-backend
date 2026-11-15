@@ -62,12 +62,4 @@ class Migration(migrations.Migration):
             field=models.BooleanField(default=False, editable=False),
         ),
         migrations.RunPython(give_every_clinic_one_dental_specialty, migrations.RunPython.noop),
-        migrations.AddConstraint(
-            model_name="specialty",
-            constraint=models.UniqueConstraint(
-                condition=models.Q(("is_dental", True)),
-                fields=("clinic",),
-                name="uniq_dental_specialty_per_clinic",
-            ),
-        ),
     ]
