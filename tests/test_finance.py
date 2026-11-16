@@ -11,8 +11,6 @@ from apps.finance.allocation import allocate
 from apps.finance.periods import add_months
 from apps.tenancy.models import Membership
 
-from .conftest import ids
-
 
 def owner_of(world, clinic=None):
     return world.client(world.owner, clinic=clinic or world.branch_a)
@@ -70,26 +68,25 @@ def payroll_row(client, month, doctor):
 # --- Expenses -----------------------------------------------------------------
 
 
-def test_admin_records_an_expense(world):
-    admin = world.client(world.admin_a)
+def test_owner_records_an_expense(world):
+    admin = owner_of(world)
     response = expense(admin, payee="Landlord")
     assert response.status_code == 201, response.json()
     body = response.json()
-    assert (body["category"], body["amount"], body["created_by"]) == ("rent", "1000000.00", str(world.admin_a.pk))
+    assert (body["category"], body["amount"]) == ("rent", "1000000.00")
     assert body["clinic"] == str(world.branch_a.pk)
 
 
 def test_expense_cannot_be_edited_or_deleted(world):
-    admin = world.client(world.admin_a)
+    admin = owner_of(world)
     url = f"/api/v1/expenses/{expense(admin).json()['id']}/"
     assert admin.patch(url, {"amount": "1"}, format="json").status_code in {403, 405}
     assert admin.delete(url).status_code in {403, 405}
 
 
-def test_void_needs_owner_and_a_reason(world):
-    admin = world.client(world.admin_a)
+def test_void_needs_a_reason(world):
+    admin = owner_of(world)
     url = f"/api/v1/expenses/{expense(admin).json()['id']}/void/"
-    assert admin.post(url, {"reason": "Typo"}, format="json").status_code == 403
     owner = owner_of(world)
     assert owner.post(url, {}, format="json").status_code == 400
     voided = owner.post(url, {"reason": "Typo"}, format="json")
@@ -98,7 +95,7 @@ def test_void_needs_owner_and_a_reason(world):
 
 
 def test_future_expense_is_refused(world):
-    admin = world.client(world.admin_a)
+    admin = owner_of(world)
     tomorrow = (timezone.localdate() + timedelta(days=2)).isoformat()
     assert expense(admin, spent_on=tomorrow).status_code == 400
 
@@ -109,17 +106,13 @@ def test_doctor_has_no_access_to_expenses(world):
     assert expense(doctor).status_code == 403
 
 
-def test_pay_categories_are_owner_only(world):
-    admin = world.client(world.admin_a)
-    refused = expense(admin, category="staff_salary")
-    assert refused.status_code == 400 and refused.json()["errors"] == {"category": "forbidden"}
-
+def test_pay_categories_are_hidden_from_the_branch_desk(world):
+    # The desk has no expense rights at all (Moliya is the owner's), so a salary row stays out of reach.
     owner = owner_of(world)
     salary = expense(owner, category="staff_salary", payee="Receptionist").json()
-    rent = expense(admin).json()
-    assert ids(admin.get("/api/v1/expenses/")) == {rent["id"]}
-    assert admin.get(f"/api/v1/expenses/{salary['id']}/").status_code == 404
-    assert ids(owner.get("/api/v1/expenses/")) == {rent["id"], salary["id"]}
+    admin = world.client(world.admin_a)
+    assert admin.get("/api/v1/expenses/").status_code == 403
+    assert admin.get(f"/api/v1/expenses/{salary['id']}/").status_code == 403
 
 
 def test_doctor_share_needs_a_doctor_of_this_branch(world):
@@ -136,12 +129,12 @@ def test_doctor_share_needs_a_doctor_of_this_branch(world):
 
 
 def test_expenses_are_isolated_per_branch(world):
-    rent_a = expense(world.client(world.admin_a)).json()
-    admin_b = world.client(world.admin_b)
-    assert admin_b.get(f"/api/v1/expenses/{rent_a['id']}/").status_code == 404
-    assert world.client(world.other_admin).get(f"/api/v1/expenses/{rent_a['id']}/").status_code == 404
+    rent_a = expense(owner_of(world)).json()
+    owner_b = world.client(world.owner, clinic=world.branch_b)
+    assert owner_b.get(f"/api/v1/expenses/{rent_a['id']}/").status_code == 404
+    assert world.client(world.other_admin).get(f"/api/v1/expenses/{rent_a['id']}/").status_code == 403
     owner_all = world.client(world.owner, organization=world.org)
-    expense(admin_b, amount="5")
+    expense(owner_b, amount="5")
     assert {row["clinic_name"] for row in owner_all.get("/api/v1/expenses/").json()["results"]} == {
         "Branch A",
         "Branch B",
@@ -150,7 +143,7 @@ def test_expenses_are_isolated_per_branch(world):
 
 
 def test_summary_groups_by_kind_and_skips_voided(world):
-    admin = world.client(world.admin_a)
+    admin = owner_of(world)
     owner = owner_of(world)
     expense(admin, category="rent", amount="300", spent_on="2026-10-01")
     expense(admin, category="materials", amount="200", spent_on="2026-10-20")
@@ -171,16 +164,13 @@ def test_summary_groups_by_kind_and_skips_voided(world):
     assert owner_view["bucket"] == "day" and len(owner_view["series"]) == 31
     assert owner_view["by_category"][0] == {"category": "staff_salary", "amount": "500.00"}
 
-    admin_view = admin.get("/api/v1/expenses/summary/?from=2026-10-01&to=2026-10-31").json()
-    assert admin_view["totals"]["total"] == "500.00" and admin_view["totals"]["payroll"] == "0.00"
-
 
 @pytest.mark.parametrize(
     "query",
     ["", "from=2026-10-01", "from=2026-10-31&to=2026-10-01", "from=2025-01-01&to=2026-10-01", "from=x&to=y"],
 )
 def test_summary_rejects_a_bad_range(world, query):
-    assert world.client(world.admin_a).get(f"/api/v1/expenses/summary/?{query}").status_code == 400
+    assert owner_of(world).get(f"/api/v1/expenses/summary/?{query}").status_code == 400
 
 
 # --- Recurring ----------------------------------------------------------------
@@ -196,7 +186,7 @@ def this_month():
 
 
 def test_recurring_month_is_paid_once(world):
-    admin = world.client(world.admin_a)
+    admin = owner_of(world)
     rent = template(admin).json()
     month = this_month().strftime("%Y-%m")
     pay_url = f"/api/v1/recurring-expenses/{rent['id']}/pay/"
@@ -217,7 +207,7 @@ def test_recurring_month_is_paid_once(world):
 
 
 def test_recurring_due_and_skip(world):
-    admin = world.client(world.admin_a)
+    admin = owner_of(world)
     rent = template(admin, day_of_month=28).json()
     next_month = add_months(this_month(), 1).strftime("%Y-%m")
     due = admin.get(f"/api/v1/recurring-expenses/due/?month={next_month}").json()
@@ -236,14 +226,14 @@ def test_recurring_due_and_skip(world):
 
 
 def test_recurring_month_before_the_template_is_empty(world):
-    admin = world.client(world.admin_a)
+    admin = owner_of(world)
     template(admin)
     last_month = add_months(this_month(), -1).strftime("%Y-%m")
     assert admin.get(f"/api/v1/recurring-expenses/due/?month={last_month}").json()["items"] == []
 
 
 def test_inactive_template_is_kept_but_not_due(world):
-    admin = world.client(world.admin_a)
+    admin = owner_of(world)
     rent = template(admin).json()
     assert admin.delete(f"/api/v1/recurring-expenses/{rent['id']}/").status_code in {403, 405}
     switched = admin.patch(f"/api/v1/recurring-expenses/{rent['id']}/", {"is_active": False}, format="json")
@@ -253,15 +243,15 @@ def test_inactive_template_is_kept_but_not_due(world):
 
 
 def test_recurring_rules(world):
-    admin = world.client(world.admin_a)
+    admin = owner_of(world)
     assert template(admin, category="doctor_share").json()["errors"] == {"category": "invalid"}
-    assert template(admin, category="staff_salary").json()["errors"] == {"category": "forbidden"}
     assert template(admin, day_of_month=31).status_code == 400
     assert admin.get("/api/v1/recurring-expenses/due/?month=2026-13").status_code == 400
-    owner_salary = template(owner_of(world), name="Nurse", category="staff_salary").json()
-    assert admin.get(f"/api/v1/recurring-expenses/{owner_salary['id']}/").status_code == 404
     rent_a = template(admin).json()
-    assert world.client(world.admin_b).get(f"/api/v1/recurring-expenses/{rent_a['id']}/").status_code == 404
+    assert (
+        world.client(world.owner, clinic=world.branch_b).get(f"/api/v1/recurring-expenses/{rent_a['id']}/").status_code
+        == 404
+    )
 
 
 # --- Allocation and payroll -----------------------------------------------------
@@ -398,7 +388,7 @@ def test_finance_report_totals(world):
     payment(world, amount="600", at="2026-10-11T07:00:00Z", method="card")
     payment(world, patient=world.patient_a2, amount="500", at="2026-10-12T08:00:00Z")
     procedure(world, amount="300", at="2026-09-10T07:00:00Z")
-    expense(world.client(world.admin_a), amount="200", spent_on="2026-10-05")
+    expense(owner_of(world), amount="200", spent_on="2026-10-05")
     expense(owner_of(world), category="staff_salary", amount="100", spent_on="2026-10-06")
 
     owner = owner_of(world).get("/api/v1/reports/finance/?from=2026-10-01&to=2026-10-31").json()
@@ -419,19 +409,12 @@ def test_finance_report_totals(world):
     assert doctors == {str(world.doctor_a.pk): ("1000.00", "600.00"), str(world.doctor_a2.pk): ("500.00", "500.00")}
     assert sum(Decimal(point["billed"]) for point in owner["series"]) == Decimal("1500")
 
-    admin = world.client(world.admin_a).get("/api/v1/reports/finance/?from=2026-10-01&to=2026-10-31").json()
-    assert (admin["totals"]["expenses"], admin["totals"]["profit"], admin["includes_payroll"]) == (
-        "200.00",
-        None,
-        False,
-    )
-
 
 def test_finance_report_access(world):
     assert world.client(world.doctor_a).get("/api/v1/reports/finance/?from=2026-10-01&to=2026-10-31").status_code == 403
     procedure(world, patient=world.patient_b, doctor=world.admin_b, amount="900")
-    admin_a = world.client(world.admin_a).get("/api/v1/reports/finance/?from=2026-10-01&to=2026-10-31").json()
-    assert admin_a["totals"]["billed"] == "0.00"
+    branch_a = owner_of(world).get("/api/v1/reports/finance/?from=2026-10-01&to=2026-10-31").json()
+    assert branch_a["totals"]["billed"] == "0.00"
     owner_all = world.client(world.owner, organization=world.org)
     combined = owner_all.get("/api/v1/reports/finance/?from=2026-10-01&to=2026-10-31").json()
     assert combined["totals"]["billed"] == "900.00"

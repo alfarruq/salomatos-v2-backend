@@ -32,6 +32,7 @@ class ClinicSerializer(serializers.ModelSerializer):
             "working_hours",
             "is_active",
             "doctors_see_money",
+            "admins_see_money",
         ]
         read_only_fields = ["id", "is_active"]
 
@@ -124,6 +125,7 @@ class StaffSerializer(serializers.ModelSerializer):
             "specialty_name",
             "specialty_is_dental",
             "can_see_money",
+            "debts_only",
             "experience_years",
             "biography",
             "compensation",

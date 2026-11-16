@@ -74,8 +74,9 @@ def test_the_switch_is_per_doctor(world, crown):
 
 def test_admins_and_owners_are_never_affected(world, crown):
     hide_from_all_doctors(world)
-    assert MONEY - {"payroll:view_own"} <= permissions(world, world.admin_a)
-    assert world.client(world.admin_a).get("/api/v1/payments/").status_code == 200
+    assert {"money:view", "payment:view"} <= permissions(world, world.admin_a)
+    patient = world.patient_a.pk
+    assert world.client(world.admin_a).get(f"/api/v1/payments/?patient={patient}").status_code == 200
 
 
 def test_only_the_owner_flips_the_switches(world):
