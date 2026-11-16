@@ -7,7 +7,7 @@ from apps.billing.models import Payment
 from apps.catalog.models import Service
 from apps.dental.models import Procedure
 
-FULL = {"money:view", "payment:view", "payment:manage", "patient:debt"}
+FULL = {"money:view", "payment:view", "patient:debt"}
 
 
 @pytest.fixture
@@ -98,10 +98,6 @@ def test_switched_off_admin_sees_no_money_not_even_debt(world, work):
     assert not FULL & permissions(world, world.admin_a)
     assert admin.get("/api/v1/procedures/").json()["results"][0]["unit_price"] is None
     assert admin.get(f"/api/v1/patients/{world.patient_a.pk}/").json()["debt"] is None
-    assert (
-        admin.post("/api/v1/payments/", {"patient": str(world.patient_a.pk), "amount": "1"}, format="json").status_code
-        == 403
-    )
 
 
 def test_the_clinic_switch_overrides_each_admin(world, work):
@@ -138,3 +134,33 @@ def test_only_the_owner_flips_admin_switches(world):
     url = f"/api/v1/staff/{world.admin_a.pk}/"
     assert admin.patch(url, {"debts_only": True}, format="json").status_code == 403
     assert admin.patch("/api/v1/clinic/", {"admins_see_money": True}, format="json").status_code == 403
+
+
+def take_payment(client, world, amount="1000"):
+    return client.post(
+        "/api/v1/payments/", {"patient": str(world.patient_a.pk), "amount": amount, "method": "cash"}, format="json"
+    )
+
+
+@pytest.mark.parametrize("fields", [{"can_see_money": False}, {"debts_only": True}])
+def test_an_admin_takes_payments_whatever_the_switches(world, work, fields):
+    set_admin(world, **fields)
+    admin = world.client(world.admin_a)
+    assert take_payment(admin, world).status_code == 201
+    # Taking money is not reading the ledger.
+    assert admin.get(f"/api/v1/payments/?patient={world.patient_a.pk}").status_code == 403
+
+
+def test_the_clinic_switch_does_not_stop_an_admin_taking_payments(world, work):
+    set_clinic(world, False)
+    assert take_payment(world.client(world.admin_a), world).status_code == 201
+
+
+def test_a_doctor_takes_payments_even_when_money_is_hidden(world, work):
+    assert owner(world).patch("/api/v1/clinic/", {"doctors_see_money": False}, format="json").status_code == 200
+    doctor = world.client(world.doctor_a)
+    assert take_payment(doctor, world).status_code == 201
+    assert doctor.get("/api/v1/payments/").status_code == 403
+    # Only for patients the doctor can see.
+    other = {"patient": str(world.patient_a2.pk), "amount": "1", "method": "cash"}
+    assert doctor.post("/api/v1/payments/", other, format="json").status_code == 400

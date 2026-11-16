@@ -36,6 +36,9 @@ _DOCTOR = {
     "money:view",
     # A patient's outstanding debt: stays visible even when money is hidden from a doctor.
     "patient:debt",
+    # Taking a payment at the desk or the chair is work, not a view of money: no switch removes it.
+    # Voiding stays the owner's, and reading the ledger needs `payment:view`.
+    "payment:manage",
     # Read back a patient's bot login; a doctor only for patients they can see.
     "patient:bot_access",
     # A doctor's own figures only; views narrow to the caller without `*:view_all`.
@@ -48,7 +51,7 @@ _DOCTOR = {
 # Money an admin can be given, by how much the owner allows. None of it is in the
 # base role: `permissions_for` adds the tier that applies.
 _ADMIN_DEBTS = {"patient:debt"}
-_ADMIN_FULL = _ADMIN_DEBTS | {"money:view", "payment:view", "payment:manage"}
+_ADMIN_FULL = _ADMIN_DEBTS | {"money:view", "payment:view"}
 
 # The front desk of one branch. Staff, the price list, the clinic profile and the
 # whole Moliya section (reports, expenses, the payments journal) are the owner's
