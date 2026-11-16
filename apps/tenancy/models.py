@@ -33,6 +33,8 @@ class Clinic(BaseModel):
     is_active = models.BooleanField(default=True)
     # The owner's master switch: off hides prices, payments and pay from every doctor of the branch.
     doctors_see_money = models.BooleanField(default=True)
+    # The same for administrators; off overrides each admin's own switches.
+    admins_see_money = models.BooleanField(default=True)
 
     class Meta(BaseModel.Meta):
         ordering = ["name"]
@@ -81,6 +83,8 @@ class Membership(BaseModel):
     experience_years = models.PositiveSmallIntegerField(null=True, blank=True)
     # Per doctor, under Clinic.doctors_see_money: both must be on for a doctor to see money.
     can_see_money = models.BooleanField(default=True)
+    # Admins only: with money on, show only what each patient owes (no prices or paid amounts).
+    debts_only = models.BooleanField(default=False)
     biography = models.TextField(blank=True)
 
     class Meta(BaseModel.Meta):

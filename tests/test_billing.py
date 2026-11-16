@@ -32,7 +32,7 @@ def test_balance_is_charges_minus_payments(world):
 
 def test_debtors_list(world):
     charge(world, world.patient_a, "100")
-    admin = world.client(world.admin_a)
+    admin = world.client(world.owner, clinic=world.branch_a)
     debtors = admin.get("/api/v1/balances/?has_debt=true").json()["results"]
     assert [row["id"] for row in debtors] == [str(world.patient_a.pk)]
 

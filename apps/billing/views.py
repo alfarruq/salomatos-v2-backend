@@ -4,7 +4,7 @@ from django_filters import rest_framework as filters
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from apps.audit.models import AuditLog
@@ -52,6 +52,12 @@ class PaymentViewSet(
     def scope_queryset(self, queryset):
         return queryset.filter(patient_filter(self.request)).distinct()
 
+    def list(self, request, *args, **kwargs):
+        # Without finance:view the payments journal stays closed: only one patient's payments (their card).
+        if not self.has_perm("finance:view") and "patient" not in request.query_params:
+            raise PermissionDenied("The payments journal is not open to your role.")
+        return super().list(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         ensure_patient_visible(self.request, serializer.validated_data["patient"])
         serializer.validated_data["received_by"] = self.request.membership
@@ -94,7 +100,8 @@ class PatientBalanceViewSet(
     serializer_class = PatientBalanceSerializer
     filterset_class = BalanceFilter
     organization_actions = frozenset({"list", "retrieve"})
-    required_permissions = {"list": "payment:view", "retrieve": "payment:view"}
+    # The debtors list is the Moliya section's; one patient's balance is part of their card.
+    required_permissions = {"list": "finance:view", "retrieve": "payment:view"}
 
     def scope_queryset(self, queryset):
         queryset = queryset.filter(patient_filter(self.request, prefix="")).distinct()

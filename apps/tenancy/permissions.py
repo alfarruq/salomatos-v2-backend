@@ -30,6 +30,8 @@ _DOCTOR = {
     "procedure:view",
     "procedure:manage",
     "payment:view",
+    # The Moliya section's cross-patient lists (payments journal, debtors); the owner's, and a doctor's own patients.
+    "finance:view",
     # Prices and paid amounts on procedures, plans and the price list.
     "money:view",
     # A patient's outstanding debt: stays visible even when money is hidden from a doctor.
@@ -43,36 +45,46 @@ _DOCTOR = {
     "voice:use",
 }
 
-# The front desk of one branch. Staff, the price list and the clinic profile are
-# the owner's ("Boshqaruv"), and so are statistics.
-_ADMIN = (_DOCTOR - {"statistics:view", "payroll:view_own"}) | {
+# Money an admin can be given, by how much the owner allows. None of it is in the
+# base role: `permissions_for` adds the tier that applies.
+_ADMIN_DEBTS = {"patient:debt"}
+_ADMIN_FULL = _ADMIN_DEBTS | {"money:view", "payment:view", "payment:manage"}
+
+# The front desk of one branch. Staff, the price list, the clinic profile and the
+# whole Moliya section (reports, expenses, the payments journal) are the owner's
+# ("Boshqaruv"), and so are statistics.
+_ADMIN = (_DOCTOR - {"statistics:view", "payroll:view_own", "finance:view"} - _ADMIN_FULL) | {
     "patient:view_all",
     "patient:archive",
     "appointment:view_all",
     "chair:manage",
     "procedure:void",
-    "payment:manage",
-    "report:view",
-    "expense:view",
-    "expense:manage",
 }
 
-_OWNER = _ADMIN | {
-    # Open, rename and close branches; also checked against Organization.owners.
-    "branch:manage",
-    "clinic:manage",
-    "staff:manage",
-    "service:manage",
-    "specialty:manage",
-    "statistics:view",
-    "statistics:view_all",
-    "staff:manage_owners",
-    "audit:view",
-    "payment:void",
-    "expense:void",
-    "payroll:view",
-    "payroll:manage",
-}
+_OWNER = (
+    _ADMIN
+    | _ADMIN_FULL
+    | {
+        "finance:view",
+        "report:view",
+        "expense:view",
+        "expense:manage",
+        # Open, rename and close branches; also checked against Organization.owners.
+        "branch:manage",
+        "clinic:manage",
+        "staff:manage",
+        "service:manage",
+        "specialty:manage",
+        "statistics:view",
+        "statistics:view_all",
+        "staff:manage_owners",
+        "audit:view",
+        "payment:void",
+        "expense:void",
+        "payroll:view",
+        "payroll:manage",
+    }
+)
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     Role.OWNER: frozenset(_OWNER),
@@ -82,7 +94,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
 
 
 # What the owner can hide from doctors: prices, the payments ("Moliya") and the doctor's own pay.
-MONEY_PERMISSIONS = frozenset({"money:view", "payment:view", "payroll:view_own"})
+MONEY_PERMISSIONS = frozenset({"money:view", "payment:view", "finance:view", "payroll:view_own"})
 
 
 def doctor_sees_money(membership: Membership) -> bool:
@@ -91,12 +103,25 @@ def doctor_sees_money(membership: Membership) -> bool:
     return membership.clinic_id is None or membership.clinic.doctors_see_money
 
 
+def admin_money_tier(membership: Membership) -> frozenset[str]:
+    """What money an admin gets: nothing, only debts, or everything but the Moliya section.
+
+    The clinic switch overrides the admin's own; with both on, `debts_only` narrows to debts.
+    """
+    clinic_allows = membership.clinic_id is None or membership.clinic.admins_see_money
+    if not clinic_allows or not membership.can_see_money:
+        return frozenset()
+    return frozenset(_ADMIN_DEBTS if membership.debts_only else _ADMIN_FULL)
+
+
 def permissions_for(membership: Membership | None) -> frozenset[str]:
     if membership is None or not membership.is_active:
         return frozenset()
     granted = ROLE_PERMISSIONS.get(membership.role, frozenset())
     if membership.role == Role.DOCTOR and not doctor_sees_money(membership):
         granted = granted - MONEY_PERMISSIONS
+    elif membership.role == Role.ADMIN:
+        granted = granted | admin_money_tier(membership)
     return granted
 
 
