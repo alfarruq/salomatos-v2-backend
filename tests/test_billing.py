@@ -56,9 +56,9 @@ def test_payments_cannot_be_edited_or_deleted(world):
     assert admin.delete(url).status_code in {403, 405}
 
 
-def test_doctor_cannot_take_payments_but_sees_own_patient_balance(world):
+def test_doctor_takes_payments_and_sees_own_patient_balance(world):
     doctor = world.client(world.doctor_a)
-    assert pay(doctor, world.patient_a, "10").status_code == 403
+    assert pay(doctor, world.patient_a, "10").status_code == 201
     assert doctor.get(f"/api/v1/balances/{world.patient_a.pk}/").status_code == 200
     assert doctor.get(f"/api/v1/balances/{world.patient_a2.pk}/").status_code == 404
 
