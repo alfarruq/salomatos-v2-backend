@@ -30,6 +30,10 @@ _DOCTOR = {
     "procedure:view",
     "procedure:manage",
     "payment:view",
+    # Prices and paid amounts on procedures, plans and the price list.
+    "money:view",
+    # A patient's outstanding debt: stays visible even when money is hidden from a doctor.
+    "patient:debt",
     # Read back a patient's bot login; a doctor only for patients they can see.
     "patient:bot_access",
     # A doctor's own figures only; views narrow to the caller without `*:view_all`.
@@ -77,10 +81,27 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
 }
 
 
+# What the owner can hide from doctors: prices, the payments ("Moliya") and the doctor's own pay.
+MONEY_PERMISSIONS = frozenset({"money:view", "payment:view", "payroll:view_own"})
+
+
+def doctor_sees_money(membership: Membership) -> bool:
+    if not membership.can_see_money:
+        return False
+    return membership.clinic_id is None or membership.clinic.doctors_see_money
+
+
 def permissions_for(membership: Membership | None) -> frozenset[str]:
     if membership is None or not membership.is_active:
         return frozenset()
-    return ROLE_PERMISSIONS.get(membership.role, frozenset())
+    granted = ROLE_PERMISSIONS.get(membership.role, frozenset())
+    if membership.role == Role.DOCTOR and not doctor_sees_money(membership):
+        granted = granted - MONEY_PERMISSIONS
+    return granted
+
+
+def can_see_money(request) -> bool:
+    return "money:view" in permissions_for(getattr(request, "membership", None))
 
 
 class HasClinicPermission(BasePermission):

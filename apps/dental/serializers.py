@@ -11,6 +11,8 @@ from apps.patients.models import Patient
 from apps.patients.serializers import doctor_field
 from apps.scheduling.models import Appointment
 from apps.tenancy.fields import ClinicRelatedField
+from apps.tenancy.money import HidesMoneyMixin
+from apps.tenancy.permissions import can_see_money
 
 
 def validate_surfaces(value):
@@ -56,7 +58,8 @@ class ToothEventSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class PlanItemSerializer(serializers.ModelSerializer):
+class PlanItemSerializer(HidesMoneyMixin, serializers.ModelSerializer):
+    money_fields = ("unit_price", "total")
     service = ClinicRelatedField(queryset=Service.objects.all())
     service_name = serializers.CharField(source="service.name", read_only=True)
     unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0"), required=False)
@@ -82,12 +85,16 @@ class PlanItemSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         require_tooth_for_surfaces(attrs)
+        if not can_see_money(self.context["request"]):
+            # Someone who cannot see prices does not set them: the price list's figure applies.
+            attrs.pop("unit_price", None)
         if attrs.get("unit_price") is None:
             attrs["unit_price"] = attrs["service"].price
         return attrs
 
 
-class TreatmentPlanSerializer(serializers.ModelSerializer):
+class TreatmentPlanSerializer(HidesMoneyMixin, serializers.ModelSerializer):
+    money_fields = ("total",)
     clinic_name = serializers.CharField(source="clinic.name", read_only=True)
     patient = ClinicRelatedField(queryset=Patient.objects.all(), extra_filter={"archived_at__isnull": True})
     doctor = doctor_field(required=False)
@@ -142,7 +149,8 @@ class TreatmentPlanSerializer(serializers.ModelSerializer):
         return instance
 
 
-class ProcedureSerializer(serializers.ModelSerializer):
+class ProcedureSerializer(HidesMoneyMixin, serializers.ModelSerializer):
+    money_fields = ("unit_price", "total")
     clinic_name = serializers.CharField(source="clinic.name", read_only=True)
     patient = ClinicRelatedField(queryset=Patient.objects.all(), extra_filter={"archived_at__isnull": True})
     # The clinic-wide procedure journal lists rows of many patients; without the name it is unreadable.
@@ -199,6 +207,10 @@ class ProcedureSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         require_tooth_for_surfaces(attrs)
+        if not can_see_money(self.context["request"]):
+            # A doctor kept away from money neither prices the line nor records a payment.
+            attrs.pop("unit_price", None)
+            attrs.pop("paid_amount", None)
         patient = attrs["patient"]
         if patient.is_lead:
             # The first procedure is where a lead becomes a patient; the desk fills the form first.
