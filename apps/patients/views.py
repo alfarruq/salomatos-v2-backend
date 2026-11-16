@@ -66,7 +66,7 @@ class PatientViewSet(
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        if self.action in self.BALANCE_ACTIONS and self.has_perm("payment:view"):
+        if self.action in self.BALANCE_ACTIONS and self.has_perm("patient:debt"):
             queryset = annotate_balance(queryset)
         return queryset
 

@@ -31,6 +31,8 @@ class Clinic(BaseModel):
     timezone = models.CharField(max_length=64, default="Asia/Tashkent")
     working_hours = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
+    # The owner's master switch: off hides prices, payments and pay from every doctor of the branch.
+    doctors_see_money = models.BooleanField(default=True)
 
     class Meta(BaseModel.Meta):
         ordering = ["name"]
@@ -77,6 +79,8 @@ class Membership(BaseModel):
     # Doctor profile. Lives here, not on User, because it is per clinic.
     specialty = models.ForeignKey(Specialty, on_delete=models.SET_NULL, null=True, blank=True, related_name="doctors")
     experience_years = models.PositiveSmallIntegerField(null=True, blank=True)
+    # Per doctor, under Clinic.doctors_see_money: both must be on for a doctor to see money.
+    can_see_money = models.BooleanField(default=True)
     biography = models.TextField(blank=True)
 
     class Meta(BaseModel.Meta):

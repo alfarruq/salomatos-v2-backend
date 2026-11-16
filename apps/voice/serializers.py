@@ -3,6 +3,7 @@ from rest_framework import serializers
 from apps.clinical.models import PrescriptionItem
 from apps.patients.models import Patient
 from apps.tenancy.fields import ClinicRelatedField
+from apps.tenancy.money import HidesMoneyMixin
 from apps.voice.drafts import FORMS
 
 
@@ -28,7 +29,8 @@ class DraftPatientFieldsSerializer(serializers.Serializer):
     address = serializers.CharField(allow_blank=True)
 
 
-class DraftProcedureSerializer(serializers.Serializer):
+class DraftProcedureSerializer(HidesMoneyMixin, serializers.Serializer):
+    money_fields = ("unit_price",)
     service = serializers.UUIDField(allow_null=True)
     service_name = serializers.CharField(allow_blank=True)
     unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True)

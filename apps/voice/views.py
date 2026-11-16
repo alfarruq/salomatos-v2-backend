@@ -104,4 +104,4 @@ class VoiceViewSet(ClinicScopedMixin, viewsets.GenericViewSet):
             input_tokens=extraction.input_tokens,
             output_tokens=extraction.output_tokens,
         )
-        return Response(VoiceDraftSerializer(draft).data)
+        return Response(VoiceDraftSerializer(draft, context=self.get_serializer_context()).data)

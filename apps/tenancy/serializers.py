@@ -23,7 +23,16 @@ def _this_month(clinic: Clinic) -> date:
 class ClinicSerializer(serializers.ModelSerializer):
     class Meta:
         model = Clinic
-        fields = ["id", "name", "phone_number", "address", "timezone", "working_hours", "is_active"]
+        fields = [
+            "id",
+            "name",
+            "phone_number",
+            "address",
+            "timezone",
+            "working_hours",
+            "is_active",
+            "doctors_see_money",
+        ]
         read_only_fields = ["id", "is_active"]
 
 
@@ -114,6 +123,7 @@ class StaffSerializer(serializers.ModelSerializer):
             "specialty",
             "specialty_name",
             "specialty_is_dental",
+            "can_see_money",
             "experience_years",
             "biography",
             "compensation",
