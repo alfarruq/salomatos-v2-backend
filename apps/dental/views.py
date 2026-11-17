@@ -215,10 +215,18 @@ class ProcedureFilter(PatientRecordFilter):
     performed_from = filters.IsoDateTimeFilter(field_name="performed_at", lookup_expr="gte")
     performed_to = filters.IsoDateTimeFilter(field_name="performed_at", lookup_expr="lt")
     voided = filters.BooleanFilter(field_name="voided_at", lookup_expr="isnull", exclude=True)
+    has_debt = filters.BooleanFilter(method="filter_has_debt")
 
     class Meta:
         model = Procedure
         fields = ["service", "status"]
+
+    def filter_has_debt(self, queryset, name, value):
+        # The debt is only annotated for callers with patient:debt; for anyone else the
+        # filter is ignored, so it cannot be used to probe who owes.
+        if "patient_debt" not in queryset.query.annotations:
+            return queryset
+        return queryset.filter(patient_debt__gt=0) if value else queryset.filter(patient_debt__lte=0)
 
 
 class ProcedureViewSet(
