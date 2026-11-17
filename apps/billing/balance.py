@@ -23,6 +23,21 @@ def _sum_subquery(queryset, expression):
     )
 
 
+def annotate_patient_debt(procedures):
+    """Adds `patient_debt`: what the row's patient owes in total (not this line's own share).
+
+    Payments are not tied to lines, so a per-line debt would be a guess; the patient's
+    balance is the figure the desk calls about.
+    """
+    charged = _sum_subquery(
+        Procedure.objects.filter(patient=OuterRef("patient"), voided_at__isnull=True), PROCEDURE_TOTAL
+    )
+    paid = _sum_subquery(Payment.objects.filter(patient=OuterRef("patient"), voided_at__isnull=True), F("amount"))
+    return procedures.annotate(_charged=charged, _paid=paid).annotate(
+        patient_debt=ExpressionWrapper(F("_charged") - F("_paid"), output_field=MONEY)
+    )
+
+
 def annotate_balance(patients):
     """Adds `charged`, `paid` and `debt` (charged - paid) to a Patient queryset."""
     charged = _sum_subquery(Procedure.objects.filter(patient=OuterRef("pk"), voided_at__isnull=True), PROCEDURE_TOTAL)

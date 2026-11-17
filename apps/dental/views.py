@@ -11,6 +11,7 @@ from rest_framework.response import Response
 
 from apps.audit.models import AuditLog
 from apps.audit.services import record
+from apps.billing.balance import annotate_patient_debt
 from apps.billing.models import Payment
 from apps.core.pagination import DefaultPagination
 from apps.dental.models import PlanItem, Procedure, ToothEvent, ToothRecord, TreatmentPlan
@@ -243,6 +244,12 @@ class ProcedureViewSet(
 
     def get_serializer_class(self):
         return ProcedureUpdateSerializer if self.action == "partial_update" else ProcedureSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.action in ("list", "retrieve") and self.has_perm("patient:debt"):
+            queryset = annotate_patient_debt(queryset)
+        return queryset
 
     def scope_queryset(self, queryset):
         queryset = queryset.filter(patient_filter(self.request)).distinct()

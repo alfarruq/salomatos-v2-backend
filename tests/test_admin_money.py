@@ -164,3 +164,17 @@ def test_a_doctor_takes_payments_even_when_money_is_hidden(world, work):
     # Only for patients the doctor can see.
     other = {"patient": str(world.patient_a2.pk), "amount": "1", "method": "cash"}
     assert doctor.post("/api/v1/payments/", other, format="json").status_code == 400
+
+
+def test_the_treatments_journal_shows_each_patients_debt_to_whoever_may_see_debt(world, work):
+    def debt(user):
+        return world.client(user).get("/api/v1/procedures/").json()["results"][0]["patient_debt"]
+
+    assert debt(world.admin_a) == "1000000.00"
+    set_admin(world, debts_only=True)
+    assert debt(world.admin_a) == "1000000.00"
+    set_admin(world, can_see_money=False)
+    assert debt(world.admin_a) is None
+    assert debt(world.doctor_a) == "1000000.00"
+    assert owner(world).patch("/api/v1/clinic/", {"doctors_see_money": False}, format="json").status_code == 200
+    assert debt(world.doctor_a) == "1000000.00"
