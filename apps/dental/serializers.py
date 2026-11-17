@@ -167,6 +167,10 @@ class ProcedureSerializer(HidesMoneyMixin, serializers.ModelSerializer):
     surfaces = serializers.JSONField(required=False, validators=[validate_surfaces])
     performed_at = serializers.DateTimeField(required=False)
     total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    # The patient's whole debt, for the journal; null without `patient:debt` or when not annotated.
+    patient_debt = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True, allow_null=True, default=None
+    )
     # Money taken at the chair when the line is entered; it becomes a Payment, not a column.
     paid_amount = serializers.DecimalField(
         max_digits=12, decimal_places=2, min_value=Decimal("0"), required=False, write_only=True
@@ -194,6 +198,7 @@ class ProcedureSerializer(HidesMoneyMixin, serializers.ModelSerializer):
             "quantity",
             "unit_price",
             "total",
+            "patient_debt",
             "paid_amount",
             "payment_method",
             "performed_at",

@@ -11,6 +11,7 @@ from rest_framework.response import Response
 
 from apps.audit.models import AuditLog
 from apps.audit.services import record
+from apps.billing.balance import annotate_patient_debt
 from apps.billing.models import Payment
 from apps.core.pagination import DefaultPagination
 from apps.dental.models import PlanItem, Procedure, ToothEvent, ToothRecord, TreatmentPlan
@@ -214,10 +215,18 @@ class ProcedureFilter(PatientRecordFilter):
     performed_from = filters.IsoDateTimeFilter(field_name="performed_at", lookup_expr="gte")
     performed_to = filters.IsoDateTimeFilter(field_name="performed_at", lookup_expr="lt")
     voided = filters.BooleanFilter(field_name="voided_at", lookup_expr="isnull", exclude=True)
+    has_debt = filters.BooleanFilter(method="filter_has_debt")
 
     class Meta:
         model = Procedure
         fields = ["service", "status"]
+
+    def filter_has_debt(self, queryset, name, value):
+        # The debt is only annotated for callers with patient:debt; for anyone else the
+        # filter is ignored, so it cannot be used to probe who owes.
+        if "patient_debt" not in queryset.query.annotations:
+            return queryset
+        return queryset.filter(patient_debt__gt=0) if value else queryset.filter(patient_debt__lte=0)
 
 
 class ProcedureViewSet(
@@ -243,6 +252,12 @@ class ProcedureViewSet(
 
     def get_serializer_class(self):
         return ProcedureUpdateSerializer if self.action == "partial_update" else ProcedureSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.action in ("list", "retrieve") and self.has_perm("patient:debt"):
+            queryset = annotate_patient_debt(queryset)
+        return queryset
 
     def scope_queryset(self, queryset):
         queryset = queryset.filter(patient_filter(self.request)).distinct()

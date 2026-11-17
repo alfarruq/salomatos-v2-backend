@@ -164,3 +164,37 @@ def test_a_doctor_takes_payments_even_when_money_is_hidden(world, work):
     # Only for patients the doctor can see.
     other = {"patient": str(world.patient_a2.pk), "amount": "1", "method": "cash"}
     assert doctor.post("/api/v1/payments/", other, format="json").status_code == 400
+
+
+def test_the_treatments_journal_shows_each_patients_debt_to_whoever_may_see_debt(world, work):
+    def debt(user):
+        return world.client(user).get("/api/v1/procedures/").json()["results"][0]["patient_debt"]
+
+    assert debt(world.admin_a) == "1000000.00"
+    set_admin(world, debts_only=True)
+    assert debt(world.admin_a) == "1000000.00"
+    set_admin(world, can_see_money=False)
+    assert debt(world.admin_a) is None
+    assert debt(world.doctor_a) == "1000000.00"
+    assert owner(world).patch("/api/v1/clinic/", {"doctors_see_money": False}, format="json").status_code == 200
+    assert debt(world.doctor_a) == "1000000.00"
+
+
+def test_the_treatments_journal_filters_to_debtors_only_for_those_who_see_debt(world, work):
+    paid_up = Payment.objects.create(
+        clinic=world.branch_a,
+        patient=world.patient_a,
+        amount=Decimal("1000000"),
+        received_by=world.admin_a,
+        paid_at=timezone.now(),
+    )
+    url = "/api/v1/procedures/?has_debt="
+    admin = world.client(world.admin_a)
+    assert admin.get(url + "true").json()["results"] == []
+    assert len(admin.get(url + "false").json()["results"]) == 1
+    paid_up.delete()
+    assert len(admin.get(url + "true").json()["results"]) == 1
+    # Without patient:debt the filter is ignored, never a way to learn who owes.
+    set_admin(world, can_see_money=False)
+    assert len(admin.get(url + "false").json()["results"]) == 1
+    assert len(admin.get(url + "true").json()["results"]) == 1
