@@ -72,7 +72,7 @@ class PatientViewSet(
 
     def scope_queryset(self, queryset):
         # A doctor sees patients assigned to them or booked with them.
-        return queryset.filter(patient_filter(self.request, prefix="")).distinct()
+        return queryset.filter(patient_filter(self.request, prefix=""))
 
     def _guard_primary_doctor(self, serializer):
         """A doctor registers patients to themselves and cannot hand one to a colleague.
