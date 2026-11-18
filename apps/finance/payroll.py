@@ -67,7 +67,12 @@ def compute(clinic: Clinic, month: date, *, doctor: Membership | None = None) ->
     until = start_of(add_months(month, 1), zone)
 
     compensations = defaultdict(list)
-    for terms in Compensation.objects.filter(clinic=clinic, effective_from__lt=add_months(month, 1)):
+    # The serializer shows the doctor's and the author's names; loading them here
+    # keeps the doctor count out of the query count.
+    terms_rows = Compensation.objects.filter(clinic=clinic, effective_from__lt=add_months(month, 1)).select_related(
+        "doctor__user", "created_by__user"
+    )
+    for terms in terms_rows:
         compensations[terms.doctor_id].append(terms)
 
     doctors = (

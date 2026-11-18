@@ -97,3 +97,25 @@ def test_list_and_detail_carry_the_debt(world):
     assert api.get(f"/api/v1/patients/{world.patient_a.pk}/").json()["debt"] == "200.00"
     found = api.post("/api/v1/patients/search/", {"query": "A Patient"}, format="json").json()["results"]
     assert {row["debt"] for row in found} == {"200.00", "0.00"}
+
+
+def test_doctor_sees_a_colleagues_patient_once_however_many_visits_are_booked(world):
+    # Visibility is an EXISTS check, not a join: a join would repeat the patient per booking.
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.scheduling.models import Appointment
+
+    start = timezone.now() + timedelta(days=1)
+    for n in range(3):
+        Appointment.objects.create(
+            clinic=world.branch_a,
+            patient=world.patient_a2,
+            doctor=world.doctor_a,
+            start_at=start + timedelta(hours=n),
+            end_at=start + timedelta(hours=n, minutes=30),
+        )
+    response = world.client(world.doctor_a).get("/api/v1/patients/")
+    listed = [row["id"] for row in response.json()["results"]]
+    assert listed.count(str(world.patient_a2.pk)) == 1

@@ -50,7 +50,7 @@ class PaymentViewSet(
     }
 
     def scope_queryset(self, queryset):
-        return queryset.filter(patient_filter(self.request)).distinct()
+        return queryset.filter(patient_filter(self.request))
 
     def list(self, request, *args, **kwargs):
         # Without finance:view the payments journal stays closed: only one patient's payments (their card).
@@ -104,5 +104,5 @@ class PatientBalanceViewSet(
     required_permissions = {"list": "finance:view", "retrieve": "payment:view"}
 
     def scope_queryset(self, queryset):
-        queryset = queryset.filter(patient_filter(self.request, prefix="")).distinct()
+        queryset = queryset.filter(patient_filter(self.request, prefix=""))
         return annotate_balance(queryset).order_by("-debt", "full_name")

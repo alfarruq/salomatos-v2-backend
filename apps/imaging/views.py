@@ -40,7 +40,7 @@ class AttachmentViewSet(ClinicScopedModelViewSet):
         return AttachmentUpdateSerializer if self.action == "partial_update" else AttachmentSerializer
 
     def scope_queryset(self, queryset):
-        return queryset.filter(patient_filter(self.request)).distinct()
+        return queryset.filter(patient_filter(self.request))
 
     def perform_create(self, serializer):
         ensure_patient_visible(self.request, serializer.validated_data["patient"])

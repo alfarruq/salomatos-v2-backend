@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 
 from apps.patients.models import Patient
 from apps.tenancy.permissions import permissions_for
@@ -13,16 +13,21 @@ def visible_patients(request):
     queryset = Patient.objects.filter(clinic_id__in=request.clinic_ids)
     if "patient:view_all" in permissions_for(request.membership):
         return queryset
-    me = request.membership
-    return queryset.filter(Q(primary_doctor=me) | Q(appointments__doctor=me)).distinct()
+    return queryset.filter(patient_filter(request, prefix=""))
 
 
 def patient_filter(request, prefix: str = "patient__"):
     """A Q that limits rows linked to a patient to the patients the caller may see."""
     if "patient:view_all" in permissions_for(request.membership):
         return Q()
+    from apps.scheduling.models import Appointment
+
     me = request.membership
-    return Q(**{f"{prefix}primary_doctor": me}) | Q(**{f"{prefix}appointments__doctor": me})
+    # EXISTS instead of a join: a join repeats a patient once per booking, which
+    # forced callers into DISTINCT, and DISTINCT made every list count evaluate
+    # its per-row annotations (debt) for the whole table.
+    booked_with_me = Appointment.objects.filter(patient_id=OuterRef(f"{prefix}id"), doctor=me)
+    return Q(**{f"{prefix}primary_doctor": me}) | Q(Exists(booked_with_me))
 
 
 def ensure_patient_visible(request, patient: Patient) -> None:

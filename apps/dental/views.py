@@ -67,7 +67,7 @@ class ToothRecordViewSet(
         return ToothRecordUpdateSerializer if self.action == "partial_update" else ToothRecordSerializer
 
     def scope_queryset(self, queryset):
-        return queryset.filter(patient_filter(self.request)).distinct()
+        return queryset.filter(patient_filter(self.request))
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -120,7 +120,7 @@ class ToothRecordViewSet(
         )
         if tooth := request.query_params.get("tooth"):
             events = events.filter(tooth=tooth)
-        events = events.select_related("recorded_by__user").distinct().order_by("-created_at")
+        events = events.select_related("recorded_by__user").order_by("-created_at")
         # The chart itself is unpaginated (32 teeth at most); its history grows, so it pages.
         paginator = DefaultPagination()
         page = paginator.paginate_queryset(events, request, view=self)
@@ -152,7 +152,7 @@ class TreatmentPlanViewSet(ClinicScopedModelViewSet):
     }
 
     def scope_queryset(self, queryset):
-        return queryset.filter(patient_filter(self.request)).distinct()
+        return queryset.filter(patient_filter(self.request))
 
     def perform_create(self, serializer):
         ensure_patient_visible(self.request, serializer.validated_data["patient"])
@@ -260,7 +260,7 @@ class ProcedureViewSet(
         return queryset
 
     def scope_queryset(self, queryset):
-        queryset = queryset.filter(patient_filter(self.request)).distinct()
+        queryset = queryset.filter(patient_filter(self.request))
         if self.has_perm("patient:view_all") or self.request.query_params.get("patient"):
             # One patient's history is the whole of it: the next doctor needs
             # to know what a colleague already did to that tooth.
