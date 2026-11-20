@@ -224,3 +224,133 @@ def test_rows_whose_patient_or_service_was_deleted_are_kept(v1_source):
     assert not no_service.service.is_active
     assert "treatment_patient_deleted_kept_on_placeholder: 1" in output
     assert "treatment_service_deleted_kept_on_placeholder: 1" in output
+
+
+# The older single-clinic build: no clinic table, no tenant columns, specialty as text.
+ARCHIVE_SCHEMA = """
+create schema archsrc;
+set search_path = archsrc;
+create table authentication_user (id bigint primary key, username varchar(255), full_name varchar(255) not null,
+  phone_number varchar(14) not null, birth_date date, address varchar(255), role varchar(200) not null,
+  is_active boolean not null, doctor_id bigint, specialty varchar(255), experience integer, biography text,
+  created_at timestamptz);
+create table clinic_treatmenttype (id bigint primary key, name varchar(255) not null, price integer);
+create table clinic_treatment (id bigint primary key, created_at timestamptz, total_treatment_cost integer not null,
+  total_paid integer not null, visit_number integer not null, tooth_number integer not null, start_date date not null,
+  notes text, doctor_id bigint, patient_id bigint, treatment_type_id bigint, status varchar(20) not null);
+create table calendars_appointment (id bigint primary key, created_at timestamptz, date date not null,
+  "time" time not null, notes text, status varchar(20) not null, doctor_id bigint not null,
+  patient_id bigint not null);
+create table core_recipe (id bigint primary key, created_at timestamptz, notes text, doctor_id bigint,
+  patient_id bigint);
+create table core_medicine (id bigint primary key, name varchar(255) not null, dose integer not null,
+  type varchar(255) not null, frequency varchar(255) not null, duration integer not null,
+  meal varchar(255) not null, minutes integer not null, recipe_id bigint not null);
+create table authentication_gallery (id bigint primary key);
+"""
+
+
+def _seed_archive(cur):
+    cur.execute(ARCHIVE_SCHEMA)
+    users = [
+        (1, "boss", "Boss", "+998901110000", "superadmin", None, None),
+        (2, "doc", "Doc", "+998901110001", "doctor", None, "Terapevt"),
+        (3, None, "Archive Patient", "+998901110003", "patient", 2, None),
+    ]
+    for uid, username, name, phone, role, doctor_id, specialty in users:
+        cur.execute(
+            "insert into authentication_user (id, username, full_name, phone_number, role, is_active, doctor_id,"
+            " specialty, created_at) values (%s,%s,%s,%s,%s,true,%s,%s,now())",
+            (uid, username, name, phone, role, doctor_id, specialty),
+        )
+    cur.execute("insert into clinic_treatmenttype values (1, 'Plomba', 300000)")
+    cur.execute(
+        "insert into clinic_treatment values"
+        " (1, now(), 500000, 200000, 1, 0, %(past)s, null, 2, 3, 1, 'completed'),"
+        " (2, now(), 100000, 100000, 1, 36, %(past)s, null, 1, 3, 1, 'completed')",
+        {"past": PAST},
+    )
+    cur.execute(
+        "insert into calendars_appointment values (1, now(), %(past)s, '10:00', null, 'in_progress', 2, 3)",
+        {"past": PAST},
+    )
+    cur.execute("insert into core_recipe values (1, now(), null, 2, 3)")
+    cur.execute("insert into core_medicine values (1, 'Ibuprofen', 400, 'tablet', '3 marta', 5, 'keyin', 0, 1)")
+    cur.execute("reset search_path")
+
+
+@pytest.fixture
+def archive_source(transactional_db):
+    with connection.cursor() as cur:
+        _seed_archive(cur)
+    settings = connection.settings_dict
+    yield make_dsn(
+        dbname=settings["NAME"],
+        user=settings["USER"],
+        password=settings["PASSWORD"],
+        host=settings["HOST"],
+        port=settings["PORT"],
+        options="-c search_path=archsrc",
+    )
+    with connection.cursor() as cur:
+        cur.execute("drop schema archsrc cascade")
+
+
+@pytest.fixture
+def panel_org(transactional_db):
+    from apps.tenancy.models import Clinic
+
+    owner = User.objects.create_user(username="arch_owner", password="x", full_name="Owner")
+    org = Organization.objects.create(name="Archive")
+    org.owners.add(owner)
+    Clinic.objects.create(organization=org, name="Archive")
+    return org
+
+
+def _archive(conninfo, org, *extra) -> str:
+    out = StringIO()
+    call_command("import_v1", "--source", conninfo, "--into", str(org.pk), "--skip-prescriptions", *extra, stdout=out)
+    return out.getvalue()
+
+
+def test_single_clinic_source_goes_into_the_panel_organization(archive_source, panel_org):
+    output = _archive(archive_source, panel_org, "--commit")
+
+    assert Organization.objects.count() == 1
+    clinic = panel_org.clinics.get()
+    assert Patient.objects.get().clinic == clinic
+    assert "owner login arch_owner" in output
+    owner = Membership.objects.get(clinic=clinic, role=Membership.Role.OWNER)
+    doctor = Membership.objects.get(user__username="doc")
+    # History only: old staff stay on the records but cannot sign in.
+    assert not doctor.is_active
+    assert not doctor.user.is_active
+    assert doctor.specialty.name == "Terapevt"
+    assert not User.objects.filter(username="boss").exists()
+    assert Procedure.objects.get(unit_price=100000).doctor == owner
+    assert Procedure.objects.get(unit_price=500000).tooth is None
+    assert "treatment_tooth_not_fdi_left_empty" not in output
+    assert "v2_debt: 300000\n" in output
+    assert Appointment.objects.get().doctor == doctor
+    assert not Prescription.objects.exists()
+    assert "prescriptions_not_imported: 1" in output
+    assert "Archive Patient" not in output
+
+
+def test_single_clinic_source_needs_into_and_no_clinic(archive_source, panel_org):
+    with pytest.raises(CommandError):
+        _run(archive_source)
+    with pytest.raises(CommandError):
+        call_command("import_v1", "--source", archive_source, stdout=StringIO())
+
+
+def test_importing_twice_into_the_same_organization_is_refused(archive_source, panel_org):
+    _archive(archive_source, panel_org, "--commit")
+    with pytest.raises(CommandError):
+        _archive(archive_source, panel_org, "--commit")
+    assert Patient.objects.count() == 1
+
+
+def test_into_needs_a_known_organization(archive_source, panel_org):
+    with pytest.raises(CommandError):
+        call_command("import_v1", "--source", archive_source, "--into", "not-a-uuid", stdout=StringIO())

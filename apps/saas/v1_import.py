@@ -1,4 +1,11 @@
-"""One-off import of one clinic from the SalomatOS v1 database into a new v2 organization.
+"""One-off import of one clinic from the SalomatOS v1 database into v2.
+
+By default a new organization is created. With `into` the rows go into an
+organization made beforehand in the platform panel, keeping its owner login.
+
+A single-clinic source (an older v1 build with no `clinic_clinic` table and no
+tenant columns) is read whole; its staff come in as inactive members, so the
+records stay attributed to them but nobody can sign in as them.
 
 v1 kept everyone (owner, doctors, patients) in `authentication_user` and pointed
 every row's `clinic_id` at the owner's user row, not at `clinic_clinic`. v1 had
@@ -18,6 +25,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import psycopg2
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from psycopg2.extras import RealDictCursor
@@ -170,10 +178,69 @@ class _Source:
         }
 
 
+class _SingleClinicSource(_Source):
+    """Older v1 build: one clinic per database, so every row belongs to it."""
+
+    def load(self) -> dict:
+        users = self.rows(
+            "select id, username, full_name, phone_number, birth_date, address, role, is_active, doctor_id,"
+            " specialty, experience, biography, created_at from authentication_user order by id"
+        )
+        # Specialty was free text on the user; give each distinct text an id like v1's doctor types had.
+        names = sorted({(u["specialty"] or "").strip() for u in users if u["role"] == "doctor"} - {""})
+        type_ids = {name: index for index, name in enumerate(names, start=1)}
+        for user in users:
+            user["doctor_type_id"] = type_ids.get((user.pop("specialty") or "").strip())
+        return {
+            "clinic": {"name": None, "phone_number": "", "address": "", "working_hours": None, "admin_id": None},
+            "users": users,
+            "doctor_types": [{"id": index, "name": name} for name, index in type_ids.items()],
+            "treatment_types": self.rows(
+                "select id, name, price, null::bigint as doctor_type_id from clinic_treatmenttype order by id"
+            ),
+            "treatments": self.rows(
+                "select id, created_at, total_treatment_cost, total_paid, tooth_number, start_date, notes,"
+                " doctor_id, patient_id, treatment_type_id, status from clinic_treatment order by id"
+            ),
+            "appointments": self.rows(
+                'select id, created_at, date, "time", notes, status, doctor_id, patient_id,'
+                " null::integer as tooth_number, null::text as treatment_type"
+                " from calendars_appointment order by id"
+            ),
+            "recipes": self.rows("select id, created_at, notes, doctor_id, patient_id from core_recipe order by id"),
+            "medicines": self.rows(
+                "select recipe_id, name, dose, type, frequency, duration, meal, minutes from core_medicine order by id"
+            ),
+            "gallery": self.rows("select count(*) as n from authentication_gallery")[0]["n"],
+            "single_clinic": True,
+        }
+
+
+def _is_single_clinic(conninfo: str) -> bool:
+    source = _Source(conninfo, 0)
+    try:
+        return source.rows("select to_regclass('clinic_clinic') is null as single")[0]["single"]
+    finally:
+        source.close()
+
+
 class Importer:
-    def __init__(self, data: dict, *, name: str | None, username_prefix: str):
+    def __init__(
+        self,
+        data: dict,
+        *,
+        name: str | None,
+        username_prefix: str,
+        into: Organization | None = None,
+        skip_prescriptions: bool = False,
+    ):
         self.data = data
-        self.name = name or data["clinic"]["name"]
+        self.into = into
+        self.single = data.get("single_clinic", False)
+        self.skip_prescriptions = skip_prescriptions
+        self.name = name or data["clinic"]["name"] or (into.name if into else None)
+        if not self.name and not into:
+            raise V1ImportError("This source has no clinic name; pass --name or --into.")
         self.prefix = username_prefix
         self.report = Report()
         self.audit: list[AuditLog] = []
@@ -196,7 +263,16 @@ class Importer:
         return self.report
 
     def _preflight(self):
-        if Organization.objects.filter(name=self.name).exists():
+        if self.into is not None:
+            clinics = list(self.into.clinics.all())
+            if len(clinics) != 1:
+                raise V1ImportError("The target organization must have exactly one branch.")
+            if not self.into.owners.exists():
+                raise V1ImportError("The target organization has no owner.")
+            # A second run would double every debt and payment.
+            if Patient.objects.filter(clinic=clinics[0]).exists():
+                raise V1ImportError("The target branch already has patients; refusing to import twice.")
+        elif Organization.objects.filter(name=self.name).exists():
             raise V1ImportError("An organization with this name already exists; pass another --name.")
         taken = User.objects.filter(username__in=[self._username(u) for u in self._staff()]).values_list(
             "username", flat=True
@@ -206,6 +282,9 @@ class Importer:
 
     def _staff(self) -> list[dict]:
         owner_id = self.data["clinic"]["admin_id"]
+        if self.single:
+            # Admin and superadmin rows have no counterpart here; their work is kept under the owner.
+            return [u for u in self.data["users"] if u["role"] == "doctor"]
         return [u for u in self.data["users"] if u["id"] == owner_id or u["role"] in ("doctor", "admin")]
 
     def _username(self, user: dict) -> str:
@@ -216,6 +295,44 @@ class Importer:
     def _import(self):
         source = self.data["clinic"]
         self.tz = ZoneInfo("Asia/Tashkent")
+        if self.into is not None:
+            self._use_existing()
+        else:
+            self._create_organization(source)
+
+        self._specialties()
+        self._staff_members(source["admin_id"])
+        self._services()
+        self._patients()
+        self._procedures()
+        self._appointments()
+        if self.skip_prescriptions:
+            self.report.issues["prescriptions_not_imported"] = len(self.data["recipes"])
+        else:
+            self._prescriptions()
+        self.report.issues["gallery_files_not_imported"] = self.data["gallery"]
+        if self.single:
+            self.report.issues["admin_rows_mapped_to_owner"] = sum(
+                1 for u in self.data["users"] if u["role"] in ("superadmin", "admin")
+            )
+        else:
+            self.report.issues["other_superadmins_skipped"] = sum(
+                1 for u in self.data["users"] if u["role"] == "superadmin" and u["id"] != source["admin_id"]
+            )
+
+    def _use_existing(self):
+        self.clinic = self.into.clinics.get()
+        self.owner = (
+            Membership.objects.filter(clinic=self.clinic, role=Membership.Role.OWNER, user__in=self.into.owners.all())
+            .order_by("created_at")
+            .first()
+        )
+        if self.owner is None:
+            raise V1ImportError("The target owner has no membership in its branch.")
+        self.report.organization_id = str(self.into.pk)
+        self.report.owner_username = self.owner.user.username
+
+    def _create_organization(self, source):
         organization = Organization.objects.create(name=self.name)
         Contract.objects.create(organization=organization)
         owner_row = next((u for u in self.data["users"] if u["id"] == source["admin_id"]), None)
@@ -244,18 +361,6 @@ class Importer:
         self.report.owner_username = owner.username
         self.report.counts["owner"] = 1
 
-        self._specialties()
-        self._staff_members(source["admin_id"])
-        self._services()
-        self._patients()
-        self._procedures()
-        self._appointments()
-        self._prescriptions()
-        self.report.issues["gallery_files_not_imported"] = self.data["gallery"]
-        self.report.issues["other_superadmins_skipped"] = sum(
-            1 for u in self.data["users"] if u["role"] == "superadmin" and u["id"] != source["admin_id"]
-        )
-
     def _specialties(self):
         self.specialties = {}
         by_name = {}
@@ -271,25 +376,31 @@ class Importer:
             self.specialties[row["id"]] = by_name[key]
         self.report.counts["specialties"] = len(by_name)
 
-    def _staff_members(self, owner_id: int):
-        self.doctors = {owner_id: self.owner}
+    def _staff_members(self, owner_id: int | None):
+        self.doctors = {owner_id: self.owner} if owner_id is not None else {}
+        if self.single:
+            for row in self.data["users"]:
+                if row["role"] in ("superadmin", "admin"):
+                    self.doctors[row["id"]] = self.owner
         for row in self._staff():
             if row["id"] == owner_id:
                 continue
+            # A history-only import must not hand out working logins (or bot logins) to old staff.
+            active = row["is_active"] and not self.single
             # No password: the owner sets each one in Boshqaruv before staff sign in.
             user = User.objects.create_user(
                 username=self._username(row),
                 password=None,
                 full_name=row["full_name"],
                 phone_number=normalize_phone(row["phone_number"]),
-                is_active=row["is_active"],
+                is_active=active,
             )
             role = Membership.Role.DOCTOR if row["role"] == "doctor" else Membership.Role.ADMIN
             membership = Membership.objects.create(
                 user=user,
                 clinic=self.clinic,
                 role=role,
-                is_active=row["is_active"],
+                is_active=active,
                 specialty=self.specialties.get(row["doctor_type_id"]),
                 experience_years=_small(row["experience"]) if row["experience"] is not None else None,
                 biography=row["biography"] or "",
@@ -362,7 +473,8 @@ class Importer:
             if service is None:
                 service = self._deleted_service()
                 self.report.issues["treatment_service_deleted_kept_on_placeholder"] += 1
-            if row["tooth_number"] is not None and _tooth(row["tooth_number"]) is None:
+            # The single-clinic build stored 0 for "no tooth".
+            if row["tooth_number"] not in (None, 0) and _tooth(row["tooth_number"]) is None:
                 self.report.issues["treatment_tooth_not_fdi_left_empty"] += 1
             doctor = self._doctor(row["doctor_id"], "treatment")
             performed_at = self._local(row["start_date"])
@@ -513,10 +625,36 @@ class Importer:
         )
 
 
-def import_clinic(conninfo: str, clinic_id: int, *, name=None, username_prefix="", commit=False) -> Report:
-    source = _Source(conninfo, clinic_id)
+def import_clinic(
+    conninfo: str,
+    clinic_id: int | None,
+    *,
+    name=None,
+    username_prefix="",
+    into=None,
+    skip_prescriptions=False,
+    commit=False,
+) -> Report:
+    single = _is_single_clinic(conninfo)
+    if single and clinic_id is not None:
+        raise V1ImportError("This source holds one clinic only; leave out --clinic.")
+    if not single and clinic_id is None:
+        raise V1ImportError("This source holds several clinics; pass --clinic.")
+    if single and into is None:
+        raise V1ImportError("A single-clinic source has no owner to copy; pass --into with a panel-made organization.")
+    target = None
+    if into is not None:
+        try:
+            target = Organization.objects.filter(pk=into).first()
+        except DjangoValidationError:
+            target = None
+        if target is None:
+            raise V1ImportError("Target organization not found.")
+    source = _SingleClinicSource(conninfo, 0) if single else _Source(conninfo, clinic_id)
     try:
         data = source.load()
     finally:
         source.close()
-    return Importer(data, name=name, username_prefix=username_prefix).run(commit)
+    return Importer(
+        data, name=name, username_prefix=username_prefix, into=target, skip_prescriptions=skip_prescriptions
+    ).run(commit)
