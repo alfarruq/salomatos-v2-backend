@@ -27,10 +27,18 @@ class PatientFilter(filters.FilterSet):
     primary_doctor = filters.UUIDFilter()
     archived = filters.BooleanFilter(field_name="archived_at", lookup_expr="isnull", exclude=True)
     lead = filters.BooleanFilter(field_name="registered_at", lookup_expr="isnull")
+    has_debt = filters.BooleanFilter(method="filter_has_debt")
 
     class Meta:
         model = Patient
         fields = ["primary_doctor"]
+
+    def filter_has_debt(self, queryset, name, value):
+        # `debt` is annotated only for callers with `patient:debt`; filtering on it
+        # without that right would reveal who owes money through the row set.
+        if "debt" not in queryset.query.annotations:
+            raise PermissionDenied("Debts are not visible to this account.")
+        return queryset.filter(debt__gt=0) if value else queryset.filter(debt__lte=0)
 
 
 class PatientViewSet(
