@@ -148,3 +148,13 @@ def test_has_debt_filter_needs_the_debt_right(world):
     api = world.client(world.admin_a)
     assert api.get("/api/v1/patients/?has_debt=true").status_code == 403
     assert api.get("/api/v1/patients/").status_code == 200
+
+
+def test_search_honours_has_debt(world):
+    _owe(world, world.patient_a, 300)
+    api = world.client(world.admin_a)
+    body = {"query": "Patient", "has_debt": True}
+    assert ids(api.post("/api/v1/patients/search/", body, format="json")) == {str(world.patient_a.pk)}
+    world.admin_a.can_see_money = False
+    world.admin_a.save(update_fields=["can_see_money"])
+    assert api.post("/api/v1/patients/search/", body, format="json").status_code == 403

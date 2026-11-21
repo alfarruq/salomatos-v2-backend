@@ -143,6 +143,8 @@ class PatientViewSet(
             queryset = queryset.filter(registered_at__isnull=True).annotate(last_appointment_at=Subquery(last))
         elif not params.validated_data["include_leads"]:
             queryset = queryset.filter(registered_at__isnull=False)
+        if params.validated_data["has_debt"] is not None:
+            queryset = PatientFilter().filter_has_debt(queryset, "has_debt", params.validated_data["has_debt"])
         page = self.paginate_queryset(queryset.order_by("full_name"))
         record_many(request, AuditLog.Action.VIEW, page)
         return self.get_paginated_response(self.get_serializer(page, many=True).data)
