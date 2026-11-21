@@ -119,3 +119,42 @@ def test_doctor_sees_a_colleagues_patient_once_however_many_visits_are_booked(wo
     response = world.client(world.doctor_a).get("/api/v1/patients/")
     listed = [row["id"] for row in response.json()["results"]]
     assert listed.count(str(world.patient_a2.pk)) == 1
+
+
+def _owe(world, patient, amount):
+    service = Service.objects.create(clinic=world.branch_a, name="Crown", price=amount)
+    Procedure.objects.create(
+        clinic=world.branch_a,
+        patient=patient,
+        doctor=world.doctor_a,
+        service=service,
+        unit_price=amount,
+        performed_at=timezone.now(),
+    )
+
+
+def test_has_debt_filter_keeps_only_debtors(world):
+    _owe(world, world.patient_a, 300)
+    api = world.client(world.admin_a)
+    assert ids(api.get("/api/v1/patients/?has_debt=true")) == {str(world.patient_a.pk)}
+    assert str(world.patient_a.pk) not in ids(api.get("/api/v1/patients/?has_debt=false"))
+    assert len(ids(api.get("/api/v1/patients/"))) == 2
+
+
+def test_has_debt_filter_needs_the_debt_right(world):
+    # Filtering by debt would reveal debtors to an admin the owner hid money from.
+    world.admin_a.can_see_money = False
+    world.admin_a.save(update_fields=["can_see_money"])
+    api = world.client(world.admin_a)
+    assert api.get("/api/v1/patients/?has_debt=true").status_code == 403
+    assert api.get("/api/v1/patients/").status_code == 200
+
+
+def test_search_honours_has_debt(world):
+    _owe(world, world.patient_a, 300)
+    api = world.client(world.admin_a)
+    body = {"query": "Patient", "has_debt": True}
+    assert ids(api.post("/api/v1/patients/search/", body, format="json")) == {str(world.patient_a.pk)}
+    world.admin_a.can_see_money = False
+    world.admin_a.save(update_fields=["can_see_money"])
+    assert api.post("/api/v1/patients/search/", body, format="json").status_code == 403

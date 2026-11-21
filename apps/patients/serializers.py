@@ -57,6 +57,8 @@ class PatientSearchSerializer(serializers.Serializer):
     include_leads = serializers.BooleanField(default=False)
     # The "new patient" dialog offers only leads, so a booked person is registered, not entered twice.
     only_leads = serializers.BooleanField(default=False)
+    # The list's "has a debt" filter, kept while the desk types a name.
+    has_debt = serializers.BooleanField(required=False, allow_null=True, default=None)
 
 
 class LeadSerializer(serializers.Serializer):
