@@ -58,6 +58,7 @@ class VoiceDraftSerializer(serializers.Serializer):
     patient_name = serializers.CharField(allow_blank=True, help_text="The name as dictated.")
     patient_candidates = DraftPatientSerializer(many=True)
     patient_fields = DraftPatientFieldsSerializer(allow_null=True)
+    doctor = DraftPatientSerializer(allow_null=True, help_text="Patient form: the doctor named, an active doctor here.")
     procedures = DraftProcedureSerializer(many=True)
     medicines = DraftMedicineSerializer(many=True)
     notes = serializers.CharField(allow_blank=True)

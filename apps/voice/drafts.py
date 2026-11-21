@@ -19,6 +19,7 @@ from apps.clinical.models import PrescriptionItem
 from apps.core.validators import FDI_TEETH, PHONE_RE
 from apps.patients.access import visible_patients
 from apps.patients.models import Patient
+from apps.tenancy.models import Membership
 from apps.voice import llm
 
 COMMON_RULES = """You fill one form of a dental clinic's software from a doctor's dictation.
@@ -68,6 +69,7 @@ PATIENT_SCHEMA = _object(
         "workplace": {"type": "string"},
         "address": {"type": "string"},
         "notes": {"type": "string", "description": "Complaints or other remarks."},
+        "doctor": {"type": "string", "description": 'Exactly one name from the doctor list, or "".'},
     }
 )
 
@@ -121,7 +123,8 @@ FORMS: dict[str, FormSpec] = {
     "patient": FormSpec(
         "patient:manage",
         PATIENT_SCHEMA,
-        "The form registers a new patient. Workplace only when said.\n",
+        "The form registers a new patient. Workplace only when said. `doctor` is the patient's doctor, "
+        "only when the dictation names one.\n",
         needs_patient=False,
     ),
     "procedure": FormSpec(
@@ -144,8 +147,20 @@ def _services(request):
     return list(Service.objects.filter(clinic_id__in=request.clinic_ids, is_active=True).only("id", "name", "price"))
 
 
-def _system_prompt(form: str, services) -> str:
+def _doctors(request):
+    return list(
+        Membership.objects.filter(clinic=request.clinic, role=Membership.Role.DOCTOR, is_active=True)
+        .select_related("user")
+        .order_by("user__full_name")
+    )
+
+
+def _system_prompt(form: str, services, doctors=()) -> str:
     prompt = COMMON_RULES + FORMS[form].rules
+    if form == "patient":
+        # Staff names, not patients: the model picks from the list so a garbled name still lands on a real doctor.
+        names = "\n".join(f"- {doctor.user.full_name}" for doctor in doctors) or "- (empty)"
+        prompt += f"\nThe clinic's doctors (pick `doctor` only from them):\n{names}\n"
     if form == "procedure":
         # Service names are the clinic's price list, not PHI.
         names = "\n".join(f"- {service.name}" for service in services) or "- (empty)"
@@ -209,9 +224,23 @@ def _match_service(services, name: str, heard: str):
     return None
 
 
+def _match_doctor(doctors, name: str):
+    by_name = {doctor.user.full_name.casefold(): doctor for doctor in doctors}
+    key = name.strip().casefold()
+    if not key:
+        return None
+    if key in by_name:
+        return by_name[key]
+    # The model already picks from the list, so this only absorbs a stray letter. Two near names (a typo away)
+    # are ambiguous: the user picks rather than getting a wrong doctor.
+    close = difflib.get_close_matches(key, list(by_name), n=2, cutoff=0.9)
+    return by_name[close[0]] if len(close) == 1 else None
+
+
 def build_draft(request, form: str, text: str, patient: Patient | None) -> tuple[dict, llm.Extraction]:
     services = _services(request) if form == "procedure" else []
-    extraction = llm.extract(_system_prompt(form, services), text, FORMS[form].schema)
+    doctors = _doctors(request) if form == "patient" else []
+    extraction = llm.extract(_system_prompt(form, services, doctors), text, FORMS[form].schema)
     data = extraction.data
     draft = {
         "form": form,
@@ -219,6 +248,7 @@ def build_draft(request, form: str, text: str, patient: Patient | None) -> tuple
         "patient_name": "",
         "patient_candidates": [],
         "patient_fields": None,
+        "doctor": None,
         "procedures": [],
         "medicines": [],
         "notes": _clean(data.get("notes"), 2000),
@@ -232,6 +262,9 @@ def build_draft(request, form: str, text: str, patient: Patient | None) -> tuple
             "workplace": _clean(data.get("workplace"), 255),
             "address": _clean(data.get("address"), 255),
         }
+        doctor = _match_doctor(doctors, _clean(data.get("doctor"), 255))
+        if doctor is not None:
+            draft["doctor"] = {"id": doctor.pk, "full_name": doctor.user.full_name}
         return draft, extraction
 
     heard_name = _clean(data.get("patient_name"), 255)
