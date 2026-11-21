@@ -5,6 +5,7 @@ import pytest
 
 from apps.catalog.models import Service
 from apps.saas.models import Contract, PlatformPayment
+from apps.tenancy.models import Membership
 from apps.voice import llm
 from apps.voice.models import VoiceUsage
 from tests.conftest import make_user
@@ -70,6 +71,44 @@ def test_patient_draft_cleans_values(world, model):
     assert body["notes"] == "Tish og'rig'i"
     usage = VoiceUsage.objects.get()
     assert (usage.clinic, usage.member, usage.input_tokens) == (world.branch_a, world.doctor_a, 1200)
+
+
+def test_patient_draft_picks_a_named_doctor_of_this_branch(world, model):
+    world._member("doctor_b", world.branch_b, Membership.Role.DOCTOR)
+    calls = model(
+        {
+            "full_name": "Aliyev Vali",
+            "phone_number": "",
+            "birth_date": None,
+            "workplace": "",
+            "address": "",
+            "notes": "",
+            "doctor": "doctor_a ",
+        }
+    )
+    body = world.client(world.admin_a).post(URL, {"form": "patient", "text": "..."}, format="json").json()
+    assert body["doctor"] == {"id": str(world.doctor_a.pk), "full_name": "Doctor_A"}
+    # Only this branch's doctors are offered to the model.
+    assert "Doctor_A" in calls[0]["system"]
+    assert "Doctor_B" not in calls[0]["system"]
+
+
+def test_unknown_doctor_is_left_for_the_user(world, model):
+    # A real doctor, but of another branch: never offered, never accepted.
+    world._member("doctor_b", world.branch_b, Membership.Role.DOCTOR)
+    model(
+        {
+            "full_name": "",
+            "phone_number": "",
+            "birth_date": None,
+            "workplace": "",
+            "address": "",
+            "notes": "",
+            "doctor": "Doctor_B",
+        }
+    )
+    body = world.client(world.admin_a).post(URL, {"form": "patient", "text": "..."}, format="json").json()
+    assert body["doctor"] is None
 
 
 def test_bad_values_are_dropped_not_guessed(world, model):
