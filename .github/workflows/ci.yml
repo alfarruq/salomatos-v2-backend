@@ -29,6 +29,8 @@ jobs:
           cache: pip
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0
       - run: pip install -r requirements-dev.txt
+      # Fails the build when a pinned dependency has a published advisory.
+      - run: pip install pip-audit && pip-audit -r requirements.txt --strict
       - run: ruff format --check .
       - run: ruff check .
       - run: python manage.py makemigrations --check --dry-run
